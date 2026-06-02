@@ -9,9 +9,13 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$Repo = "https://github.com/axcenestacogido/unreleased.git"
-$Dir  = "musicvault"
-$Port = if ($env:PORT) { $env:PORT } else { "8080" }
+$Repo    = "https://github.com/axcenestacogido/unreleased.git"
+$Dir     = "musicvault"
+$Port    = if ($env:PORT) { $env:PORT } else { "8080" }
+$InstDir = Join-Path $HOME $Dir   # always installs to C:\Users\<you>\musicvault
+
+# Move to user home so we always have write permission
+Set-Location $HOME
 
 Write-Host ""
 Write-Host "  MusicVault installer" -ForegroundColor White
@@ -37,15 +41,15 @@ try { docker compose version | Out-Null } catch {
 }
 
 # Clone or update
-if (Test-Path "$Dir\.git") {
-    Write-Host "  [1/4] Updating existing install in .\$Dir ..."
-    git -C $Dir pull --ff-only
+if (Test-Path "$InstDir\.git") {
+    Write-Host "  [1/4] Updating existing install in $InstDir ..."
+    git -C $InstDir pull --ff-only
 } else {
-    Write-Host "  [1/4] Cloning repository ..."
-    git clone $Repo $Dir
+    Write-Host "  [1/4] Cloning into $InstDir ..."
+    git clone $Repo $InstDir
 }
 
-Set-Location $Dir
+Set-Location $InstDir
 
 # Generate .env
 if (-not (Test-Path ".env")) {
@@ -76,7 +80,7 @@ Write-Host "  OK  MusicVault running at  http://localhost:$Port" -ForegroundColo
 Write-Host ""
 Write-Host "  First run: open the URL in your browser and create an account."
 Write-Host ""
-Write-Host "  Useful commands (run from the '$Dir' folder):"
+Write-Host "  Useful commands (cd into $InstDir first):"
 Write-Host "    docker compose logs -f    # view logs"
 Write-Host "    docker compose down       # stop"
 Write-Host "    docker compose up -d      # restart"
