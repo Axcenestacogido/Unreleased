@@ -10,6 +10,7 @@ from database import get_db
 import models
 import schemas
 from auth import get_current_user, pwd_context
+from events import event_bus
 from routes.tracks import _stream_version
 
 router = APIRouter(tags=["share"])
@@ -165,10 +166,23 @@ def stream_shared_track(
     # Record listen event
     ip = request.client.host if request.client else "unknown"
     ip_hash = hashlib.sha256(ip.encode()).hexdigest()[:16]
-    event = models.ListenEvent(shared_link_id=link.id, ip_hash=ip_hash)
-    db.add(event)
+    listen_event = models.ListenEvent(shared_link_id=link.id, ip_hash=ip_hash)
+    db.add(listen_event)
     link.play_count += 1
     db.commit()
+
+    # Notify owner in real-time
+    owner_id = track.project.user_id if track.project else None
+    if owner_id:
+        now = datetime.now(timezone.utc).isoformat()
+        event_bus.publish(owner_id, {
+            "type": "listen",
+            "token": link.token,
+            "play_count": link.play_count,
+            "track_id": link.track_id,
+            "track_name": track.name,
+            "listen_event": {"timestamp": now, "ip_hash": ip_hash},
+        })
 
     return _stream_version(track, version, request)
 
@@ -225,10 +239,22 @@ def stream_shared_project_track(
 
     ip = request.client.host if request.client else "unknown"
     ip_hash = hashlib.sha256(ip.encode()).hexdigest()[:16]
-    event = models.ListenEvent(shared_link_id=link.id, ip_hash=ip_hash)
-    db.add(event)
+    listen_event = models.ListenEvent(shared_link_id=link.id, ip_hash=ip_hash)
+    db.add(listen_event)
     link.play_count += 1
     db.commit()
+
+    owner_id = track.project.user_id if track.project else None
+    if owner_id:
+        now = datetime.now(timezone.utc).isoformat()
+        event_bus.publish(owner_id, {
+            "type": "listen",
+            "token": link.token,
+            "play_count": link.play_count,
+            "track_id": link.track_id,
+            "track_name": track.name,
+            "listen_event": {"timestamp": now, "ip_hash": ip_hash},
+        })
 
     return _stream_version(track, version, request)
 

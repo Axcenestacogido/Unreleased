@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { X, BarChart2, Link2, ExternalLink } from 'lucide-react'
 import api from '../../api/client'
+import { useSSE } from '../../hooks/useSSE'
 
 function RelativeTime({ date }) {
   const d = new Date(date)
@@ -13,10 +14,11 @@ function RelativeTime({ date }) {
 }
 
 export default function AnalyticsPanel({ onClose }) {
+  const { connected } = useSSE()
   const { data: links = [], isLoading } = useQuery({
     queryKey: ['analytics'],
     queryFn: () => api.get('/analytics').then((r) => r.data),
-    refetchInterval: 30_000,
+    // No polling — SSE keeps the cache updated in real-time
   })
 
   const totalPlays = links.reduce((s, l) => s + l.play_count, 0)
@@ -31,6 +33,10 @@ export default function AnalyticsPanel({ onClose }) {
           <div className="flex items-center gap-2">
             <BarChart2 size={16} className="text-accent" />
             <h3 className="text-white font-medium">Listen analytics</h3>
+            <span className="flex items-center gap-1">
+              <span className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-green-400 animate-pulse' : 'bg-muted'}`} />
+              <span className="text-[10px] text-muted">{connected ? 'Live' : 'Connecting…'}</span>
+            </span>
           </div>
           <div className="flex items-center gap-3">
             {totalPlays > 0 && (

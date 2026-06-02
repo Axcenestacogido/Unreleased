@@ -13,6 +13,7 @@ import models
 import schemas
 from auth import get_current_user
 from config import AUDIO_DIR, ALLOWED_AUDIO_EXTENSIONS, MAX_UPLOAD_SIZE_MB
+from events import event_bus
 
 router = APIRouter(prefix="/api/tracks", tags=["tracks"])
 
@@ -111,6 +112,14 @@ def upload_track(
     db.add(version)
     db.commit()
     db.refresh(track)
+
+    event_bus.publish(user.id, {
+        "type": "track_added",
+        "project_id": track.project_id,
+        "track_id": track.id,
+        "track_name": track.name,
+    })
+
     return track
 
 
@@ -138,6 +147,14 @@ def upload_new_version(
     db.add(version)
     db.commit()
     db.refresh(track)
+
+    event_bus.publish(user.id, {
+        "type": "track_version_added",
+        "project_id": track.project_id,
+        "track_id": track.id,
+        "version_number": max_ver + 1,
+    })
+
     return track
 
 

@@ -1,9 +1,16 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './hooks/useAuth'
+import { useSSE } from './hooks/useSSE'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Project from './pages/Project'
 import PublicShare from './pages/PublicShare'
+
+// Mounts SSE connection while authenticated, provides `connected` via context if needed
+function LiveSync() {
+  useSSE()
+  return null
+}
 
 function PrivateRoute({ children }) {
   const { token } = useAuth()
@@ -11,8 +18,11 @@ function PrivateRoute({ children }) {
 }
 
 export default function App() {
+  const { token } = useAuth()
+
   return (
     <BrowserRouter>
+      {token && <LiveSync />}
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/s/:token" element={<PublicShare />} />
