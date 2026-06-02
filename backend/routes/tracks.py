@@ -13,6 +13,7 @@ import models
 import schemas
 from auth import get_current_user
 from config import AUDIO_DIR, ALLOWED_AUDIO_EXTENSIONS, MAX_UPLOAD_SIZE_MB
+from events import event_bus
 
 router = APIRouter(prefix="/api/tracks", tags=["tracks"])
 
@@ -111,6 +112,14 @@ def upload_track(
     db.add(version)
     db.commit()
     db.refresh(track)
+
+    event_bus.publish(user.id, {
+        "type": "track_added",
+        "project_id": track.project_id,
+        "track_id": track.id,
+        "track_name": track.name,
+    })
+
     return track
 
 
@@ -138,6 +147,14 @@ def upload_new_version(
     db.add(version)
     db.commit()
     db.refresh(track)
+
+    event_bus.publish(user.id, {
+        "type": "track_version_added",
+        "project_id": track.project_id,
+        "track_id": track.id,
+        "version_number": max_ver + 1,
+    })
+
     return track
 
 
@@ -158,7 +175,20 @@ def update_track(
     user: models.User = Depends(get_current_user)
 ):
     track = get_track_or_404(track_id, user, db)
-    for key, value in data.model_dump(exclude_unset=True).items():
+    updates = data.model_dump(exclude_unset=True)
+
+    if "project_id" in updates:
+        target_project = db.query(models.Project).filter(
+            models.Project.id == updates["project_id"],
+            models.Project.user_id == user.id
+        ).first()
+        if not target_project:
+            raise HTTPException(status_code=404, detail="Target project not found")
+        # Clear folder when moving projects (folder belongs to old project)
+        if updates["project_id"] != track.project_id:
+            track.folder_id = None
+
+    for key, value in updates.items():
         setattr(track, key, value)
     db.commit()
     db.refresh(track)

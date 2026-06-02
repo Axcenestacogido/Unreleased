@@ -1,11 +1,11 @@
 import { useCallback, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Upload, X, CheckCircle, AlertCircle } from 'lucide-react'
+import { Upload, CheckCircle, AlertCircle } from 'lucide-react'
 import api from '../../api/client'
 
 function UploadItem({ file, projectId, folderId, onDone }) {
   const [progress, setProgress] = useState(0)
-  const [status, setStatus] = useState('uploading') // uploading | done | error
+  const [status, setStatus] = useState('uploading')
 
   const upload = useMutation({
     mutationFn: () => {
@@ -23,17 +23,19 @@ function UploadItem({ file, projectId, folderId, onDone }) {
   useState(() => { upload.mutate() }, [])
 
   return (
-    <div className="flex items-center gap-3 py-2">
-      <div className="flex-1 min-w-0">
-        <p className="text-white text-xs truncate">{file.name}</p>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0' }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p className="mv-ui" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 'var(--text-xs)' }}>
+          {file.name}
+        </p>
         {status === 'uploading' && (
-          <div className="mt-1 h-0.5 bg-border rounded-full overflow-hidden">
-            <div className="h-full bg-accent transition-all" style={{ width: `${progress}%` }} />
+          <div style={{ marginTop: 4, height: 2, background: 'var(--waveform-inactive)', borderRadius: 1, overflow: 'hidden' }}>
+            <div style={{ height: '100%', background: 'var(--accent)', width: `${progress}%`, transition: 'width 0.1s' }} />
           </div>
         )}
       </div>
-      {status === 'done' && <CheckCircle size={14} className="text-green-400 flex-shrink-0" />}
-      {status === 'error' && <AlertCircle size={14} className="text-red-400 flex-shrink-0" />}
+      {status === 'done' && <CheckCircle size={14} strokeWidth={1.5} style={{ color: '#4ade80', flexShrink: 0 }} />}
+      {status === 'error' && <AlertCircle size={14} strokeWidth={1.5} style={{ color: '#f87171', flexShrink: 0 }} />}
     </div>
   )
 }
@@ -44,13 +46,13 @@ export default function UploadZone({ projectId, folderId }) {
   const [files, setFiles] = useState([])
 
   const handleDone = useCallback((fileName) => {
-    setFiles((prev) => prev.filter((f) => f.name !== fileName))
+    setFiles(prev => prev.filter(f => f.name !== fileName))
     qc.invalidateQueries({ queryKey: ['tracks', projectId] })
   }, [projectId])
 
   const addFiles = useCallback((newFiles) => {
-    const audio = Array.from(newFiles).filter((f) => f.type.startsWith('audio/') || /\.(mp3|wav|flac|aac|ogg|m4a)$/i.test(f.name))
-    setFiles((prev) => [...prev, ...audio])
+    const audio = Array.from(newFiles).filter(f => f.type.startsWith('audio/') || /\.(mp3|wav|flac|aac|ogg|m4a)$/i.test(f.name))
+    setFiles(prev => [...prev, ...audio])
   }, [])
 
   const onDrop = useCallback((e) => {
@@ -63,29 +65,31 @@ export default function UploadZone({ projectId, folderId }) {
   const onDragLeave = () => setDragging(false)
 
   return (
-    <div className="px-4 pt-4">
+    <div style={{ padding: '12px 16px 0', flexShrink: 0 }}>
       <label
-        className={`block border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-colors ${
-          dragging ? 'border-accent bg-accent/5' : 'border-border hover:border-accent/50'
-        }`}
+        style={{
+          display: 'block', border: `1.5px dashed ${dragging ? 'var(--border-strong)' : 'var(--border)'}`,
+          background: dragging ? 'var(--bg-tertiary)' : 'transparent',
+          borderRadius: 'var(--radius-lg)', padding: '14px 16px', textAlign: 'center',
+          cursor: 'pointer', transition: `all var(--dur-hover) var(--ease)`,
+        }}
         onDrop={onDrop}
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
       >
         <input
-          type="file"
-          multiple
+          type="file" multiple
           accept="audio/*,.mp3,.wav,.flac,.aac,.ogg,.m4a"
-          className="hidden"
-          onChange={(e) => addFiles(e.target.files)}
+          style={{ display: 'none' }}
+          onChange={e => addFiles(e.target.files)}
         />
-        <Upload size={16} className="mx-auto text-muted mb-1" />
-        <p className="text-muted text-xs">Drop audio files or click to upload</p>
+        <Upload size={15} strokeWidth={1.5} style={{ margin: '0 auto 4px', color: 'var(--text-muted)', display: 'block' }} />
+        <p className="mv-meta" style={{ fontSize: 'var(--text-xs)' }}>Drop audio files or click to upload</p>
       </label>
 
       {files.length > 0 && (
-        <div className="mt-3 bg-surface border border-border rounded-xl px-4 divide-y divide-border">
-          {files.map((f) => (
+        <div style={{ marginTop: 8, background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '0 12px' }}>
+          {files.map(f => (
             <UploadItem
               key={f.name + f.size}
               file={f}
