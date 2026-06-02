@@ -40,7 +40,7 @@ export default function WaveCanvas({
     if (enabled && dur > 0) {
       const x1 = (Math.min(a, b) / dur) * W
       const x2 = (Math.max(a, b) / dur) * W
-      ctx.fillStyle = 'rgba(168, 85, 247, 0.12)'
+      ctx.fillStyle = 'rgba(255,255,255,0.05)'
       ctx.fillRect(x1, 0, x2 - x1, H)
     }
 
@@ -58,7 +58,7 @@ export default function WaveCanvas({
       const barH = Math.max(2, peak * H * 0.85)
       const y = (H - barH) / 2
       const isPast = x < progressX
-      ctx.fillStyle = isPast ? '#a855f7' : '#2a2a2a'
+      ctx.fillStyle = isPast ? '#ffffff' : '#2a2a2a'
       ctx.fillRect(x, y, barW, barH)
     }
 
@@ -66,10 +66,10 @@ export default function WaveCanvas({
     if (dur > 0) {
       const drawMarker = (t, label) => {
         const x = (t / dur) * W
-        ctx.fillStyle = '#a855f7'
+        ctx.fillStyle = 'rgba(255,255,255,0.6)'
         ctx.fillRect(x - 1, 0, 2, H)
         ctx.font = '9px monospace'
-        ctx.fillStyle = '#a855f7'
+        ctx.fillStyle = 'rgba(255,255,255,0.6)'
         ctx.fillText(label, x + 3, 10)
       }
       if (enabled || a > 0) drawMarker(a, 'A')

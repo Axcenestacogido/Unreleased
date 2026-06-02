@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import {
-  Play, Pause, SkipBack, SkipForward, Volume2, VolumeX,
-  ChevronUp, ChevronDown, Repeat, RefreshCw,
+  Play, Pause, SkipBack, SkipForward, Volume2,
+  Repeat, Shuffle, Music2, Disc3,
 } from 'lucide-react'
 import { usePlayer } from '../../hooks/usePlayer'
 import { useAudioEngine } from '../../hooks/useAudioEngine'
@@ -14,29 +14,78 @@ function fmt(s) {
   return `${m}:${sec.toString().padStart(2, '0')}`
 }
 
-function Slider({ label, value, min, max, step, format, onChange }) {
+function Slider({ value, min, max, step, onChange, onReset }) {
+  const trackRef = useRef(null)
+  const dragging = useRef(false)
+
+  const pct = Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100))
+
+  const getValueFromEvent = useCallback((e) => {
+    const rect = trackRef.current.getBoundingClientRect()
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+    return min + ratio * (max - min)
+  }, [min, max])
+
+  const handleMouseDown = useCallback((e) => {
+    e.preventDefault()
+    dragging.current = true
+    onChange(getValueFromEvent(e))
+
+    const onMove = (ev) => {
+      if (dragging.current) onChange(getValueFromEvent(ev))
+    }
+    const onUp = () => {
+      dragging.current = false
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }, [getValueFromEvent, onChange])
+
   return (
-    <div className="flex flex-col items-center gap-1 min-w-0">
-      <span className="text-muted text-[10px] uppercase tracking-wider">{label}</span>
-      <input
-        type="range"
-        min={min} max={max} step={step}
-        value={value}
-        onChange={(e) => onChange(parseFloat(e.target.value))}
-        className="w-24 accent-accent"
-      />
-      <span className="text-white text-[10px] tabular-nums">{format(value)}</span>
+    <div
+      ref={trackRef}
+      onDoubleClick={onReset}
+      onMouseDown={handleMouseDown}
+      style={{ position: 'relative', height: 14, cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+    >
+      <div style={{ position: 'absolute', left: 0, right: 0, height: 2, background: 'var(--waveform-inactive)', borderRadius: 2 }} />
+      <div style={{ position: 'absolute', left: 0, width: `${pct}%`, height: 2, background: 'var(--accent)', borderRadius: 2 }} />
+      <div style={{ position: 'absolute', left: `${pct}%`, width: 10, height: 10, marginLeft: -5, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
     </div>
   )
 }
 
-export default function Player({ onRecord }) {
+function IconBtn({ onClick, children, active, size = 32, title }) {
+  const [hover, setHover] = useState(false)
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        width: size, height: size, borderRadius: '50%', border: 'none',
+        background: active ? 'var(--accent-subtle)' : hover ? 'var(--bg-tertiary)' : 'transparent',
+        color: active ? 'var(--text-primary)' : hover ? 'var(--text-primary)' : 'var(--text-secondary)',
+        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        transition: `all var(--dur-hover) var(--ease)`, flexShrink: 0,
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
+export default function Player() {
   const { currentTrack, playNext, playPrev } = usePlayer()
   const engine = useAudioEngine()
-  const [expanded, setExpanded] = useState(false)
   const [volume, setVolume] = useState(0.8)
-  const [muted, setMuted] = useState(false)
   const [clickMode, setClickMode] = useState('seek')
+  const [loopActive, setLoopActive] = useState(false)
+  const [loopA, setLoopA] = useState(null)
+  const [loopB, setLoopB] = useState(null)
 
   // Load track when it changes
   useEffect(() => {
@@ -46,13 +95,13 @@ export default function Player({ onRecord }) {
     })
   }, [currentTrack?.id])
 
-  // Volume via Tone.js master gain
+  // Volume
   useEffect(() => {
     try {
       const { Tone } = window
-      if (Tone) Tone.getDestination().volume.value = muted ? -Infinity : 20 * Math.log10(volume)
+      if (Tone) Tone.getDestination().volume.value = 20 * Math.log10(Math.max(0.0001, volume))
     } catch {}
-  }, [volume, muted])
+  }, [volume])
 
   function togglePlay() {
     if (engine.playing) engine.pause()
@@ -60,63 +109,90 @@ export default function Player({ onRecord }) {
   }
 
   function handleSeek(t, newA, newB) {
-    if (t !== null && t !== undefined) {
-      engine.seek(t)
-    }
-    if (newA !== undefined && newB !== undefined) {
+    if (t !== null && t !== undefined) engine.seek(t)
+    if (newA !== undefined && newB !== undefined) engine.setLoopPoints(newA, newB)
+  }
+
+  function handleLoopAClick() {
+    const t = engine.currentTime
+    if (loopA !== null && Math.abs(loopA - t) < 0.1) {
+      setLoopA(null)
+      if (loopActive) { engine.setLoopEnabled(false); setLoopActive(false) }
+    } else {
+      const newA = t
+      const newB = loopB !== null ? Math.max(loopB, newA + 0.5) : engine.duration
+      setLoopA(newA)
+      setLoopB(newB)
       engine.setLoopPoints(newA, newB)
+      if (loopB !== null) { engine.setLoopEnabled(true); setLoopActive(true) }
     }
   }
 
-  function handleLoopToggle() {
-    const next = !engine.loopEnabled
+  function handleLoopBClick() {
+    const t = engine.currentTime
+    if (loopB !== null && Math.abs(loopB - t) < 0.1) {
+      setLoopB(null)
+      if (loopActive) { engine.setLoopEnabled(false); setLoopActive(false) }
+    } else {
+      const newB = t
+      const newA = loopA !== null ? Math.min(loopA, newB - 0.5) : 0
+      setLoopA(newA)
+      setLoopB(newB)
+      engine.setLoopPoints(newA, newB)
+      if (loopA !== null) { engine.setLoopEnabled(true); setLoopActive(true) }
+    }
+  }
+
+  function toggleLoop() {
+    const next = !loopActive
+    setLoopActive(next)
     engine.setLoopEnabled(next)
-    if (next && engine.loopB <= engine.loopA) {
-      engine.setLoopPoints(0, engine.duration)
+    if (next && (loopA === null || loopB === null)) {
+      const a = 0, b = engine.duration
+      setLoopA(a); setLoopB(b)
+      engine.setLoopPoints(a, b)
     }
   }
-
-  if (!currentTrack) return null
-
-  const currentVer = currentTrack.versions?.[currentTrack.versions.length - 1]
 
   return (
-    <div className={`fixed bottom-0 left-0 right-0 bg-[#0f0f0f] border-t border-border z-50 transition-all duration-200 ${expanded ? 'pb-1' : ''}`}>
-      {/* Main bar */}
-      <div className="flex items-center gap-3 px-4 py-2.5">
-        {/* Playback controls */}
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          <button onClick={playPrev} className="text-muted hover:text-white p-1 transition-colors">
-            <SkipBack size={15} />
-          </button>
-          <button
-            onClick={togglePlay}
-            className="w-8 h-8 bg-accent hover:bg-accent-dim rounded-full flex items-center justify-center transition-colors"
-          >
-            {engine.playing
-              ? <Pause size={13} className="text-white" />
-              : <Play size={13} className="text-white ml-0.5" />}
-          </button>
-          <button onClick={playNext} className="text-muted hover:text-white p-1 transition-colors">
-            <SkipForward size={15} />
-          </button>
+    <aside style={{
+      width: 'var(--col-player)', flexShrink: 0, background: 'var(--bg-secondary)',
+      borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column',
+      overflow: 'hidden',
+    }}>
+      {!currentTrack ? (
+        /* Empty state */
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+          <Disc3 size={32} strokeWidth={1} style={{ color: 'var(--text-muted)' }} />
+          <span className="mv-meta" style={{ color: 'var(--text-muted)' }}>Nothing playing.</span>
         </div>
+      ) : (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '24px 20px 20px', gap: 16, overflowY: 'auto' }}>
+          {/* Cover art placeholder */}
+          <div style={{
+            width: '100%', aspectRatio: '1', background: 'var(--bg-tertiary)',
+            borderRadius: 'var(--radius-lg)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            flexShrink: 0,
+          }}>
+            <Music2 size={40} strokeWidth={1} style={{ color: 'var(--text-muted)' }} />
+          </div>
 
-        {/* Track info */}
-        <div className="flex-shrink-0 w-28 hidden sm:block">
-          <p className="text-white text-xs font-medium truncate">{currentTrack.name}</p>
-          {currentVer && <p className="text-muted text-[10px]">v{currentVer.version_number}</p>}
-        </div>
+          {/* Track info */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span className="mv-track-title" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {currentTrack.name}
+            </span>
+            <span className="mv-meta">
+              {currentTrack.artist || 'Unknown artist'}
+              {currentTrack.project_name ? ` · ${currentTrack.project_name}` : ''}
+            </span>
+          </div>
 
-        {/* Waveform */}
-        <div className="flex-1 flex items-center gap-2 min-w-0">
-          <span className="text-muted text-[10px] flex-shrink-0 tabular-nums w-8 text-right">
-            {fmt(engine.currentTime)}
-          </span>
-          <div className="flex-1 h-8 min-w-0">
+          {/* Waveform */}
+          <div style={{ height: 80, flexShrink: 0 }}>
             {engine.isLoading ? (
-              <div className="h-full flex items-center justify-center">
-                <div className="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+              <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ width: 16, height: 16, border: '2px solid var(--border-strong)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
               </div>
             ) : (
               <WaveCanvas
@@ -124,105 +200,133 @@ export default function Player({ onRecord }) {
                 currentTime={engine.currentTime}
                 duration={engine.duration}
                 onSeek={handleSeek}
-                loopA={engine.loopA}
-                loopB={engine.loopB}
-                loopEnabled={engine.loopEnabled}
+                loopA={loopA ?? 0}
+                loopB={loopB ?? engine.duration}
+                loopEnabled={loopActive}
                 clickMode={clickMode}
                 onClickDone={() => setClickMode('seek')}
               />
             )}
           </div>
-          <span className="text-muted text-[10px] flex-shrink-0 tabular-nums w-8">
-            {fmt(engine.duration)}
-          </span>
-        </div>
 
-        {/* Volume + expand */}
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <button onClick={() => setMuted(!muted)} className="text-muted hover:text-white transition-colors p-1">
-            {muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
-          </button>
-          <input
-            type="range" min={0} max={1} step={0.02}
-            value={muted ? 0 : volume}
-            onChange={(e) => { setVolume(+e.target.value); setMuted(false) }}
-            className="w-14 accent-accent hidden sm:block"
-          />
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="text-muted hover:text-white p-1 transition-colors"
-          >
-            {expanded ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
-          </button>
-        </div>
-      </div>
+          {/* Time row */}
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span className="mv-mono" style={{ fontSize: 'var(--text-xs)' }}>{fmt(engine.currentTime)}</span>
+            <span className="mv-mono" style={{ fontSize: 'var(--text-xs)' }}>{fmt(engine.duration)}</span>
+          </div>
 
-      {/* Expanded panel: pitch / speed / loop */}
-      {expanded && (
-        <div className="border-t border-border px-4 py-3 flex flex-wrap items-center justify-center gap-6">
-          <Slider
-            label="Speed"
-            value={engine.speed}
-            min={0.5} max={2} step={0.05}
-            format={(v) => `${v.toFixed(2)}x`}
-            onChange={engine.setSpeed}
-          />
+          {/* Transport */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+            <IconBtn onClick={playPrev} title="Previous">
+              <SkipBack size={16} strokeWidth={1.5} />
+            </IconBtn>
+            <button
+              onClick={togglePlay}
+              style={{
+                width: 44, height: 44, borderRadius: '50%', border: 'none',
+                background: 'var(--bg-tertiary)', color: 'var(--text-primary)',
+                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0, transition: `background var(--dur-hover) var(--ease)`,
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = '#2a2a2a'}
+              onMouseLeave={e => e.currentTarget.style.background = 'var(--bg-tertiary)'}
+            >
+              {engine.playing
+                ? <Pause size={18} strokeWidth={1.5} />
+                : <Play size={18} strokeWidth={1.5} style={{ marginLeft: 2 }} />}
+            </button>
+            <IconBtn onClick={playNext} title="Next">
+              <SkipForward size={16} strokeWidth={1.5} />
+            </IconBtn>
+          </div>
 
-          <Slider
-            label="Pitch"
-            value={engine.pitch}
-            min={-12} max={12} step={1}
-            format={(v) => `${v > 0 ? '+' : ''}${v}st`}
-            onChange={engine.setPitch}
-          />
+          {/* Loop row */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span className="mv-label" style={{ flexShrink: 0 }}>LOOP</span>
+            <button
+              onClick={handleLoopAClick}
+              style={{
+                padding: '3px 8px', borderRadius: 'var(--radius-sm)', border: '1px solid',
+                borderColor: loopA !== null ? 'var(--border-strong)' : 'var(--border)',
+                background: loopA !== null ? 'var(--accent-subtle)' : 'transparent',
+                color: loopA !== null ? 'var(--text-primary)' : 'var(--text-muted)',
+                fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', cursor: 'pointer',
+                transition: `all var(--dur-hover) var(--ease)`,
+              }}
+            >
+              A {loopA !== null ? fmt(loopA) : '--'}
+            </button>
+            <button
+              onClick={handleLoopBClick}
+              style={{
+                padding: '3px 8px', borderRadius: 'var(--radius-sm)', border: '1px solid',
+                borderColor: loopB !== null ? 'var(--border-strong)' : 'var(--border)',
+                background: loopB !== null ? 'var(--accent-subtle)' : 'transparent',
+                color: loopB !== null ? 'var(--text-primary)' : 'var(--text-muted)',
+                fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', cursor: 'pointer',
+                transition: `all var(--dur-hover) var(--ease)`,
+              }}
+            >
+              B {loopB !== null ? fmt(loopB) : '--'}
+            </button>
+            <div style={{ flex: 1 }} />
+            <IconBtn onClick={toggleLoop} active={loopActive} size={28} title="Loop">
+              <Repeat size={13} strokeWidth={1.5} />
+            </IconBtn>
+            <IconBtn size={28} title="Shuffle">
+              <Shuffle size={13} strokeWidth={1.5} />
+            </IconBtn>
+          </div>
 
-          {/* Loop A-B */}
-          <div className="flex flex-col items-center gap-1.5">
-            <span className="text-muted text-[10px] uppercase tracking-wider">Loop A-B</span>
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => setClickMode(clickMode === 'setA' ? 'seek' : 'setA')}
-                className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-                  clickMode === 'setA' ? 'bg-accent text-white' : 'bg-surface text-muted hover:text-white border border-border'
-                }`}
-              >
-                A {fmt(engine.loopA)}
-              </button>
-              <button
-                onClick={() => setClickMode(clickMode === 'setB' ? 'seek' : 'setB')}
-                className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-                  clickMode === 'setB' ? 'bg-accent text-white' : 'bg-surface text-muted hover:text-white border border-border'
-                }`}
-              >
-                B {fmt(engine.loopB)}
-              </button>
-              <button
-                onClick={handleLoopToggle}
-                className={`p-1.5 rounded transition-colors ${
-                  engine.loopEnabled ? 'text-accent bg-accent/10' : 'text-muted hover:text-white'
-                }`}
-                title="Toggle loop"
-              >
-                <Repeat size={13} />
-              </button>
-              <button
-                onClick={() => {
-                  engine.setLoopPoints(0, engine.duration)
-                  engine.setPitch(0)
-                  engine.setSpeed(1)
-                }}
-                className="p-1.5 text-muted hover:text-white rounded transition-colors"
-                title="Reset all"
-              >
-                <RefreshCw size={13} />
-              </button>
+          {/* Volume */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Volume2 size={14} strokeWidth={1.5} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+            <div style={{ flex: 1 }}>
+              <Slider
+                value={volume}
+                min={0} max={1} step={0.01}
+                onChange={setVolume}
+                onReset={() => setVolume(0.8)}
+              />
             </div>
-            <span className="text-muted text-[10px]">
-              {clickMode !== 'seek' ? `Click waveform to set ${clickMode === 'setA' ? 'A' : 'B'}` : 'Click A/B to set markers'}
-            </span>
+          </div>
+
+          {/* Divider */}
+          <div style={{ height: 1, background: 'var(--border)', flexShrink: 0 }} />
+
+          {/* Pitch */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span className="mv-label">PITCH</span>
+              <span className="mv-mono" style={{ fontSize: 'var(--text-xs)' }}>
+                {engine.pitch > 0 ? '+' : ''}{engine.pitch}st
+              </span>
+            </div>
+            <Slider
+              value={engine.pitch}
+              min={-12} max={12} step={1}
+              onChange={(v) => engine.setPitch(Math.round(v))}
+              onReset={() => engine.setPitch(0)}
+            />
+          </div>
+
+          {/* Speed */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span className="mv-label">SPEED</span>
+              <span className="mv-mono" style={{ fontSize: 'var(--text-xs)' }}>
+                {engine.speed.toFixed(2)}x
+              </span>
+            </div>
+            <Slider
+              value={engine.speed}
+              min={0.5} max={2} step={0.05}
+              onChange={engine.setSpeed}
+              onReset={() => engine.setSpeed(1)}
+            />
           </div>
         </div>
       )}
-    </div>
+    </aside>
   )
 }

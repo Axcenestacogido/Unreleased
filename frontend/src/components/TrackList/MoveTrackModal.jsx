@@ -10,12 +10,12 @@ export default function MoveTrackModal({ track, onClose }) {
 
   const { data: projects = [] } = useQuery({
     queryKey: ['projects'],
-    queryFn: () => api.get('/projects').then((r) => r.data),
+    queryFn: () => api.get('/projects').then(r => r.data),
   })
 
   const { data: folders = [] } = useQuery({
     queryKey: ['folders', targetProjectId],
-    queryFn: () => api.get(`/projects/${targetProjectId}/folders`).then((r) => r.data),
+    queryFn: () => api.get(`/projects/${targetProjectId}/folders`).then(r => r.data),
     enabled: !!targetProjectId,
   })
 
@@ -37,52 +37,75 @@ export default function MoveTrackModal({ track, onClose }) {
     String(track.project_id) === targetProjectId &&
     (targetFolderId === '' ? track.folder_id === null : String(track.folder_id) === targetFolderId)
 
+  const selectStyle = {
+    width: '100%', background: 'var(--bg-tertiary)', border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-md)', padding: '8px 12px',
+    fontSize: 'var(--text-sm)', color: 'var(--text-primary)', outline: 'none',
+    fontFamily: 'var(--font-ui)', cursor: 'pointer',
+  }
+
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4" onClick={onClose}>
-      <div className="bg-surface border border-border rounded-2xl p-6 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-5">
-          <h3 className="text-white font-medium text-sm">Move — {track.name}</h3>
-          <button onClick={onClose} className="text-muted hover:text-white transition-colors">
-            <X size={16} />
+    <div
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16, backdropFilter: 'blur(4px)' }}
+      onClick={onClose}
+    >
+      <div
+        style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-strong)', borderRadius: 'var(--radius-xl)', padding: 24, width: '100%', maxWidth: 340, boxShadow: 'var(--shadow-modal)' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+          <h3 className="mv-ui" style={{ fontWeight: 500, fontSize: 'var(--text-sm)' }}>Move — {track.name}</h3>
+          <button
+            onClick={onClose}
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4, lineHeight: 0, borderRadius: 'var(--radius-sm)' }}
+          >
+            <X size={16} strokeWidth={1.5} />
           </button>
         </div>
 
-        <div className="space-y-3">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div>
-            <label className="text-muted text-xs block mb-1.5">Project</label>
+            <label className="mv-label" style={{ display: 'block', marginBottom: 6 }}>Project</label>
             <select
-              className="w-full bg-bg border border-border rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-accent"
+              style={selectStyle}
               value={targetProjectId}
-              onChange={(e) => { setTargetProjectId(e.target.value); setTargetFolderId('') }}
+              onChange={e => { setTargetProjectId(e.target.value); setTargetFolderId('') }}
             >
-              {projects.map((p) => (
+              {projects.map(p => (
                 <option key={p.id} value={String(p.id)}>{p.name}</option>
               ))}
             </select>
           </div>
 
           <div>
-            <label className="text-muted text-xs block mb-1.5">Folder (optional)</label>
+            <label className="mv-label" style={{ display: 'block', marginBottom: 6 }}>Folder (optional)</label>
             <select
-              className="w-full bg-bg border border-border rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-accent"
+              style={selectStyle}
               value={targetFolderId}
-              onChange={(e) => setTargetFolderId(e.target.value)}
+              onChange={e => setTargetFolderId(e.target.value)}
             >
               <option value="">No folder</option>
-              {folders.map((f) => (
+              {folders.map(f => (
                 <option key={f.id} value={String(f.id)}>{f.name}</option>
               ))}
             </select>
           </div>
 
-          {move.isError && <p className="text-red-400 text-xs">Move failed</p>}
+          {move.isError && <p style={{ color: '#f87171', fontSize: 'var(--text-xs)', fontFamily: 'var(--font-ui)' }}>Move failed</p>}
 
           <button
             onClick={() => move.mutate()}
             disabled={isSameLocation || move.isPending}
-            className="w-full flex items-center justify-center gap-2 bg-accent hover:bg-accent-dim disabled:opacity-40 text-white rounded-lg py-2.5 text-sm font-medium transition-colors"
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              background: 'var(--accent)', color: '#000', border: 'none',
+              borderRadius: 'var(--radius-md)', padding: '9px 12px',
+              fontSize: 'var(--text-sm)', fontWeight: 500, fontFamily: 'var(--font-ui)',
+              cursor: isSameLocation || move.isPending ? 'not-allowed' : 'pointer',
+              opacity: isSameLocation || move.isPending ? 0.4 : 1,
+            }}
           >
-            <ArrowRight size={14} /> Move here
+            <ArrowRight size={14} strokeWidth={1.5} /> Move here
           </button>
         </div>
       </div>

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, createContext, useContext } from 'react'
+import React from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
 export function useSSE() {
@@ -113,3 +114,12 @@ export function useSSE() {
 
   return { connected }
 }
+
+export const SSEContext = createContext({ connected: false })
+
+export function SSEProvider({ children }) {
+  const { connected } = useSSE()
+  return React.createElement(SSEContext.Provider, { value: { connected } }, children)
+}
+
+export function useSSEStatus() { return useContext(SSEContext) }
