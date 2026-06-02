@@ -78,6 +78,26 @@ class TrackVersionOut(BaseModel):
 class TrackUpdate(BaseModel):
     name: Optional[str] = None
     folder_id: Optional[int] = None
+    project_id: Optional[int] = None  # for cross-project moves
+
+class ListenEventOut(BaseModel):
+    timestamp: datetime
+    ip_hash: Optional[str]
+    class Config:
+        from_attributes = True
+
+class LinkAnalytics(BaseModel):
+    token: str
+    track_id: Optional[int]
+    project_id: Optional[int]
+    track_name: Optional[str]
+    project_name: Optional[str]
+    play_count: int
+    created_at: datetime
+    expires_at: Optional[datetime]
+    events: List[ListenEventOut] = []
+    class Config:
+        from_attributes = True
 
 class TrackOut(BaseModel):
     id: int

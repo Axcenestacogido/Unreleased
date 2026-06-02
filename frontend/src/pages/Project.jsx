@@ -1,13 +1,15 @@
-import { useState, useCallback } from 'react'
+import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Upload, FolderPlus, MoreHorizontal, Share2, Trash2, History } from 'lucide-react'
+import { ArrowLeft, FolderPlus, Trash2, Mic, BarChart2, Share2 } from 'lucide-react'
 import api from '../api/client'
 import { PlayerProvider } from '../hooks/usePlayer'
 import Player from '../components/Player/Player'
 import TrackList from '../components/TrackList/TrackList'
 import ShareModal from '../components/ShareModal/ShareModal'
 import UploadZone from '../components/TrackList/UploadZone'
+import Recorder from '../components/Recorder/Recorder'
+import AnalyticsPanel from '../components/Analytics/AnalyticsPanel'
 
 export default function Project() {
   const { id } = useParams()
@@ -15,6 +17,9 @@ export default function Project() {
   const qc = useQueryClient()
   const [selectedFolder, setSelectedFolder] = useState(null)
   const [shareTrack, setShareTrack] = useState(null)
+  const [shareProject, setShareProject] = useState(false)
+  const [showRecorder, setShowRecorder] = useState(false)
+  const [showAnalytics, setShowAnalytics] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
   const [showNewFolder, setShowNewFolder] = useState(false)
 
@@ -39,35 +44,52 @@ export default function Project() {
 
   const deleteFolder = useMutation({
     mutationFn: (fid) => api.delete(`/projects/${id}/folders/${fid}`),
-    onSuccess: () => {
+    onSuccess: (_, fid) => {
       qc.invalidateQueries({ queryKey: ['folders', id] })
       qc.invalidateQueries({ queryKey: ['tracks', id] })
       if (selectedFolder === fid) setSelectedFolder(null)
     },
   })
 
-  const handleFolderCreate = (e) => {
-    e.preventDefault()
-    if (!newFolderName.trim()) return
-    createFolder.mutate(newFolderName.trim())
-  }
-
   return (
     <PlayerProvider>
       <div className="h-full flex flex-col bg-bg">
         {/* Header */}
-        <div className="flex items-center gap-3 px-4 pt-6 pb-4 border-b border-border">
+        <div className="flex items-center gap-3 px-4 pt-5 pb-3 border-b border-border">
           <button onClick={() => navigate('/')} className="text-muted hover:text-white p-1.5 rounded-lg transition-colors">
             <ArrowLeft size={18} />
           </button>
           <h1 className="text-white font-semibold text-base flex-1 truncate">
             {project?.name || '…'}
           </h1>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setShowRecorder(true)}
+              className="p-2 text-muted hover:text-white rounded-lg hover:bg-surface transition-colors"
+              title="Record idea"
+            >
+              <Mic size={16} />
+            </button>
+            <button
+              onClick={() => setShareProject(true)}
+              className="p-2 text-muted hover:text-white rounded-lg hover:bg-surface transition-colors"
+              title="Share project"
+            >
+              <Share2 size={16} />
+            </button>
+            <button
+              onClick={() => setShowAnalytics(true)}
+              className="p-2 text-muted hover:text-white rounded-lg hover:bg-surface transition-colors"
+              title="Analytics"
+            >
+              <BarChart2 size={16} />
+            </button>
+          </div>
         </div>
 
         <div className="flex flex-1 overflow-hidden">
           {/* Sidebar */}
-          <aside className="w-48 flex-shrink-0 border-r border-border overflow-y-auto py-3 px-2">
+          <aside className="w-44 flex-shrink-0 border-r border-border overflow-y-auto py-3 px-2">
             <button
               onClick={() => setSelectedFolder(null)}
               className={`w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-colors mb-1 ${
@@ -77,7 +99,7 @@ export default function Project() {
               All tracks
             </button>
 
-            <div className="mt-2 mb-1">
+            <div className="mt-2">
               <div className="flex items-center justify-between px-3 py-1">
                 <span className="text-[10px] uppercase tracking-wider text-muted font-medium">Folders</span>
                 <button onClick={() => setShowNewFolder(true)} className="text-muted hover:text-white transition-colors">
@@ -86,7 +108,10 @@ export default function Project() {
               </div>
 
               {showNewFolder && (
-                <form onSubmit={handleFolderCreate} className="px-2 mt-1">
+                <form
+                  onSubmit={(e) => { e.preventDefault(); if (newFolderName.trim()) createFolder.mutate(newFolderName.trim()) }}
+                  className="px-2 mt-1"
+                >
                   <input
                     autoFocus
                     className="w-full bg-surface border border-accent/40 rounded px-2 py-1.5 text-xs text-white focus:outline-none"
@@ -134,6 +159,15 @@ export default function Project() {
 
         {shareTrack && (
           <ShareModal track={shareTrack} onClose={() => setShareTrack(null)} />
+        )}
+        {shareProject && project && (
+          <ShareModal project={project} onClose={() => setShareProject(false)} />
+        )}
+        {showRecorder && (
+          <Recorder projectId={id} folderId={selectedFolder} onClose={() => setShowRecorder(false)} />
+        )}
+        {showAnalytics && (
+          <AnalyticsPanel onClose={() => setShowAnalytics(false)} />
         )}
       </div>
     </PlayerProvider>

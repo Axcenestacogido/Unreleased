@@ -17,7 +17,9 @@ function CopyButton({ text }) {
   )
 }
 
-export default function ShareModal({ track, onClose }) {
+// track OR project must be passed
+export default function ShareModal({ track, project, onClose }) {
+  const isProject = !!project && !track
   const qc = useQueryClient()
   const [password, setPassword] = useState('')
   const [expiresIn, setExpiresIn] = useState('')
@@ -26,7 +28,9 @@ export default function ShareModal({ track, onClose }) {
   const { data: links = [] } = useQuery({
     queryKey: ['share-links'],
     queryFn: () => api.get('/share').then((r) => r.data),
-    select: (data) => data.filter((l) => l.track_id === track.id),
+    select: (data) => isProject
+      ? data.filter((l) => l.project_id === project.id)
+      : data.filter((l) => l.track_id === track.id),
   })
 
   const createLink = useMutation({
@@ -52,7 +56,8 @@ export default function ShareModal({ track, onClose }) {
       expires_at = d.toISOString()
     }
     createLink.mutate({
-      track_id: track.id,
+      track_id: isProject ? null : track.id,
+      project_id: isProject ? project.id : null,
       password: password || null,
       expires_at,
     })
@@ -66,7 +71,7 @@ export default function ShareModal({ track, onClose }) {
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4" onClick={onClose}>
       <div className="bg-surface border border-border rounded-2xl p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5">
-          <h3 className="text-white font-medium">Share — {track.name}</h3>
+          <h3 className="text-white font-medium">Share — {isProject ? project.name : track.name}</h3>
           <button onClick={onClose} className="text-muted hover:text-white transition-colors">
             <X size={16} />
           </button>

@@ -1,15 +1,16 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Play, Share2, Trash2, History, MoreHorizontal, Upload } from 'lucide-react'
+import { Play, Share2, Trash2, History, Upload, FolderInput } from 'lucide-react'
 import api from '../../api/client'
 import { usePlayer } from '../../hooks/usePlayer'
+import MoveTrackModal from './MoveTrackModal'
 
 function formatSize(bytes) {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
-function TrackRow({ track, allTracks, onShare, onNewVersion }) {
+function TrackRow({ track, allTracks, onShare, onNewVersion, onMove }) {
   const { play } = usePlayer()
   const qc = useQueryClient()
   const [showHistory, setShowHistory] = useState(false)
@@ -62,6 +63,13 @@ function TrackRow({ track, allTracks, onShare, onNewVersion }) {
             title="Upload new version"
           >
             <Upload size={13} />
+          </button>
+          <button
+            onClick={() => onMove(track)}
+            className="p-1.5 text-muted hover:text-white rounded-lg hover:bg-surface transition-colors"
+            title="Move to…"
+          >
+            <FolderInput size={13} />
           </button>
           <button
             onClick={() => onShare(track)}
@@ -154,6 +162,7 @@ function NewVersionModal({ track, onClose }) {
 
 export default function TrackList({ projectId, folderId, onShare }) {
   const [newVersionTrack, setNewVersionTrack] = useState(null)
+  const [moveTrack, setMoveTrack] = useState(null)
 
   const { data: tracks = [] } = useQuery({
     queryKey: ['tracks', projectId, folderId],
@@ -175,10 +184,14 @@ export default function TrackList({ projectId, folderId, onShare }) {
           allTracks={tracks}
           onShare={onShare}
           onNewVersion={setNewVersionTrack}
+          onMove={setMoveTrack}
         />
       ))}
       {newVersionTrack && (
         <NewVersionModal track={newVersionTrack} onClose={() => setNewVersionTrack(null)} />
+      )}
+      {moveTrack && (
+        <MoveTrackModal track={moveTrack} onClose={() => setMoveTrack(null)} />
       )}
     </div>
   )

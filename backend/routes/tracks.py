@@ -158,7 +158,20 @@ def update_track(
     user: models.User = Depends(get_current_user)
 ):
     track = get_track_or_404(track_id, user, db)
-    for key, value in data.model_dump(exclude_unset=True).items():
+    updates = data.model_dump(exclude_unset=True)
+
+    if "project_id" in updates:
+        target_project = db.query(models.Project).filter(
+            models.Project.id == updates["project_id"],
+            models.Project.user_id == user.id
+        ).first()
+        if not target_project:
+            raise HTTPException(status_code=404, detail="Target project not found")
+        # Clear folder when moving projects (folder belongs to old project)
+        if updates["project_id"] != track.project_id:
+            track.folder_id = None
+
+    for key, value in updates.items():
         setattr(track, key, value)
     db.commit()
     db.refresh(track)

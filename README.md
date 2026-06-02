@@ -18,13 +18,23 @@ docker compose up -d --build
 # Register your account on first visit
 ```
 
-## Features (MVP)
+## Features
 
+### Core
 - **Upload & stream** — MP3, WAV, FLAC, AAC, OGG, M4A. Drag & drop with progress bar.
-- **Projects & folders** — Organise tracks in a sidebar tree.
-- **Track versioning** — Upload new versions, keep full history, play any version.
-- **Share links** — Password-protected, expirable public links. Play counter per link.
-- **Waveform player** — WaveSurfer.js, seek, volume control, queue navigation.
+- **Projects & folders** — Organise tracks in a sidebar tree. Move tracks between projects/folders.
+- **Track versioning** — Upload new versions, full history, play any version.
+- **Share links** — Password-protected, expirable links for tracks or entire projects. Play counter per link.
+
+### Player
+- **Waveform player** — Custom canvas waveform, seek, volume.
+- **Pitch control** — ±12 semitones via Tone.js PitchShift.
+- **Speed control** — 0.5x–2.0x independent of pitch.
+- **Loop A-B** — Click A/B markers on the waveform to loop a section.
+
+### Tools
+- **Recorder** — Record from microphone and save directly to a project (MediaRecorder API).
+- **Analytics** — See when and how many times each shared link was played, with anonymised IP.
 - **PWA** — Installable from Safari on iOS (Add to Home Screen). Offline cache for recent audio.
 
 ## Development
@@ -57,6 +67,28 @@ npm run dev   # proxies /api → localhost:8000
 3. Done — works like a native app
 
 For background audio on iOS 17+, the track must be playing before the screen locks. This is a WebKit limitation; if it becomes an issue, the next step is Capacitor + TestFlight.
+
+## Desktop app (Tauri)
+
+Wraps the frontend in a native Mac/Windows window. The FastAPI backend runs as a sidecar.
+
+**Prerequisites:** Rust + Tauri CLI, Node 22, Python 3.12 + PyInstaller.
+
+```bash
+# 1. Compile the backend binary
+cd tauri && bash build-backend.sh
+
+# 2. Install Tauri CLI
+npm install
+
+# 3. Dev mode (backend must be running separately)
+npm run dev
+
+# 4. Build native installer
+npm run build
+```
+
+The resulting `.dmg` / `.exe` / `.AppImage` includes both the frontend and backend.
 
 ## Data
 
