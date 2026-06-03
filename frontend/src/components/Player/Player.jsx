@@ -200,15 +200,12 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
     }, 800)
   }
 
+  // Reset loop UI state when track changes (loading is handled by outer Player)
   useEffect(() => {
     if (!currentTrack) return
     setLoopA(null)
     setLoopB(null)
     setLoopActive(false)
-    if (engine.loadedTrackId === currentTrack.id) return
-    engine.loadTrack(currentTrack.id).then(() => {
-      engine.play(0)
-    })
   }, [currentTrack?.id])
 
   // Media Session — lets OS keep audio alive when screen turns off
@@ -887,6 +884,14 @@ export default function Player({ isMobile = false }) {
   const { currentTrack, playNext, playPrev } = usePlayer()
   const engine = useAudioEngine()
   const [expanded, setExpanded] = useState(false)
+
+  // Load and auto-play whenever the selected track changes — runs regardless
+  // of whether the full player is expanded (fixes mobile mini-bar not playing)
+  useEffect(() => {
+    if (!currentTrack) return
+    if (engine.loadedTrackId === currentTrack.id) return
+    engine.loadTrack(currentTrack.id).then(() => engine.play(0))
+  }, [currentTrack?.id])
 
   function togglePlay() {
     if (engine.playing) engine.pause()
