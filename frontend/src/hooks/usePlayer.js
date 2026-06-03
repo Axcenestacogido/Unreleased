@@ -1,10 +1,19 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react'
+import { useAudioEngine } from './useAudioEngine'
 
 const PlayerContext = createContext(null)
 
 export function PlayerProvider({ children }) {
   const [currentTrack, setCurrentTrack] = useState(null)
   const [queue, setQueue] = useState([])
+  const engine = useAudioEngine()
+
+  useEffect(() => {
+    if (!currentTrack) return
+    engine.loadTrack(currentTrack.id).then(() => {
+      engine.play(0)
+    })
+  }, [currentTrack?.id])
 
   useEffect(() => {
     if (!currentTrack || !('mediaSession' in navigator)) return
@@ -33,7 +42,7 @@ export function PlayerProvider({ children }) {
 
   return React.createElement(
     PlayerContext.Provider,
-    { value: { currentTrack, play, playNext, playPrev } },
+    { value: { currentTrack, play, playNext, playPrev, engine } },
     children
   )
 }
