@@ -377,35 +377,68 @@ function ProjectsTab({ onPick }) {
   })
   const { data: allTracks = [] } = useQuery({
     queryKey: ['tracks-all'],
-    queryFn: () => Promise.all(projects.map(p => api.get(`/tracks/project/${p.id}`).then(r => ({ id: p.id, count: r.data.length })))),
+    queryFn: () => Promise.all(projects.map(p =>
+      api.get(`/tracks/project/${p.id}`).then(r => ({ id: p.id, count: r.data.length }))
+    )),
     enabled: projects.length > 0,
   })
   const counts = Object.fromEntries((allTracks || []).map(t => [t.id, t.count]))
+
   return (
     <div style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-primary)' }}>
-      <div style={{ padding: '20px 16px 8px' }}>
+      <div style={{ padding: '20px 16px 12px' }}>
         <h1 className="mv-h2">Projects</h1>
       </div>
-      <div style={{ padding: '4px 8px 16px' }}>
-        {projects.map(p => (
-          <button key={p.id} onClick={() => onPick(p.id)} style={{
-            display: 'flex', alignItems: 'center', gap: 14, width: '100%',
-            padding: '14px 12px', border: 'none', cursor: 'pointer', textAlign: 'left',
-            background: activeId === String(p.id) ? 'var(--accent-subtle)' : 'transparent',
-            borderRadius: 'var(--radius-md)', WebkitTapHighlightColor: 'transparent',
-          }}>
-            <div style={{ width: 44, height: 44, borderRadius: 'var(--radius-md)', flexShrink: 0, background: 'var(--bg-tertiary)', border: '1px solid var(--border)', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              {p.cover_path
-                ? <img src={`/covers/${p.cover_path.split('/').pop()}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                : <Disc3 size={20} strokeWidth={1.5} style={{ color: 'var(--text-secondary)' }} />}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="mv-ui" style={{ color: 'var(--text-primary)' }}>{p.name}</div>
-              <div className="mv-meta" style={{ fontSize: 'var(--text-xs)' }}>{counts[p.id] ?? '…'} tracks</div>
-            </div>
-            <ChevronRight size={18} style={{ color: 'var(--text-muted)' }} />
-          </button>
-        ))}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, padding: '0 12px 32px' }}>
+        {projects.map(p => {
+          const coverUrl = p.cover_path ? `/covers/${p.cover_path.split('/').pop()}` : null
+          const isActive = activeId === String(p.id)
+          return (
+            <button
+              key={p.id}
+              onClick={() => onPick(p.id)}
+              style={{
+                display: 'flex', flexDirection: 'column', padding: 0, border: 'none',
+                background: 'transparent', cursor: 'pointer', textAlign: 'left',
+                WebkitTapHighlightColor: 'transparent', borderRadius: 'var(--radius-lg)',
+                outline: isActive ? '2px solid rgba(255,255,255,0.3)' : 'none',
+                outlineOffset: 2,
+              }}
+            >
+              {/* Square cover */}
+              <div style={{
+                width: '100%', aspectRatio: '1', borderRadius: 'var(--radius-lg)',
+                background: 'var(--bg-tertiary)', border: '1px solid var(--border)',
+                overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                position: 'relative',
+              }}>
+                {coverUrl
+                  ? <img src={coverUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  : (
+                    <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: `hsl(${(p.id * 73) % 360},18%,14%)` }}>
+                      <Disc3 size={36} strokeWidth={1} style={{ color: 'rgba(255,255,255,0.2)' }} />
+                    </div>
+                  )}
+                {/* Track count pill */}
+                <div style={{
+                  position: 'absolute', bottom: 8, right: 8,
+                  background: 'rgba(0,0,0,0.6)', borderRadius: 'var(--radius-full)',
+                  padding: '2px 8px', fontSize: 10, color: 'rgba(255,255,255,0.75)',
+                  fontFamily: 'var(--font-mono)',
+                }}>
+                  {counts[p.id] ?? '…'}
+                </div>
+              </div>
+              {/* Name */}
+              <div style={{ padding: '8px 4px 4px' }}>
+                <div style={{
+                  fontFamily: 'var(--font-display)', fontSize: 'var(--text-sm)', fontWeight: 500,
+                  color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                }}>{p.name}</div>
+              </div>
+            </button>
+          )
+        })}
       </div>
     </div>
   )
