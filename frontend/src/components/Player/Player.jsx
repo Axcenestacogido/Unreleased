@@ -20,7 +20,6 @@ function fmt(s) {
 
 function Slider({ value, min, max, step, onChange, onReset }) {
   const trackRef = useRef(null)
-  const dragging = useRef(false)
   const pct = Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100))
 
   const getVal = useCallback((e) => {
@@ -29,26 +28,23 @@ function Slider({ value, min, max, step, onChange, onReset }) {
     return min + ratio * (max - min)
   }, [min, max])
 
-  const handleDown = useCallback((e) => {
-    e.preventDefault()
-    dragging.current = true
+  const handlePointerDown = useCallback((e) => {
+    e.currentTarget.setPointerCapture(e.pointerId)
     onChange(getVal(e))
-    const onMove = (ev) => { if (dragging.current) onChange(getVal(ev)) }
-    const onUp = () => {
-      dragging.current = false
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-    }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
+  }, [getVal, onChange])
+
+  const handlePointerMove = useCallback((e) => {
+    if (e.buttons === 0) return
+    onChange(getVal(e))
   }, [getVal, onChange])
 
   return (
-    <div ref={trackRef} onDoubleClick={onReset} onMouseDown={handleDown}
-      style={{ position: 'relative', height: 14, cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+    <div ref={trackRef} onDoubleClick={onReset}
+      onPointerDown={handlePointerDown} onPointerMove={handlePointerMove}
+      style={{ position: 'relative', height: 18, cursor: 'ew-resize', display: 'flex', alignItems: 'center', touchAction: 'none' }}>
       <div style={{ position: 'absolute', left: 0, right: 0, height: 2, background: 'var(--waveform-inactive)', borderRadius: 2 }} />
       <div style={{ position: 'absolute', left: 0, width: `${pct}%`, height: 2, background: 'var(--accent)', borderRadius: 2 }} />
-      <div style={{ position: 'absolute', left: `${pct}%`, width: 10, height: 10, marginLeft: -5, borderRadius: '50%', background: 'var(--accent)' }} />
+      <div style={{ position: 'absolute', left: `${pct}%`, width: 12, height: 12, marginLeft: -6, borderRadius: '50%', background: 'var(--accent)' }} />
     </div>
   )
 }
@@ -68,25 +64,62 @@ function IconBtn({ onClick, children, active, size = 32, title }) {
   )
 }
 
+// Vertical fader for the stems mixer view
+function VerticalFader({ value, onChange, onReset }) {
+  const trackRef = useRef(null)
+  const pct = (1 - Math.max(0, Math.min(1, value))) * 100 // 0% = top (max), 100% = bottom (min)
+
+  const getVal = useCallback((e) => {
+    const rect = trackRef.current.getBoundingClientRect()
+    return 1 - Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height))
+  }, [])
+
+  const handlePointerDown = useCallback((e) => {
+    e.currentTarget.setPointerCapture(e.pointerId)
+    onChange(getVal(e))
+  }, [getVal, onChange])
+
+  const handlePointerMove = useCallback((e) => {
+    if (e.buttons === 0) return
+    onChange(getVal(e))
+  }, [getVal, onChange])
+
+  return (
+    <div ref={trackRef}
+      onPointerDown={handlePointerDown} onPointerMove={handlePointerMove}
+      onDoubleClick={onReset}
+      style={{ flex: 1, position: 'relative', cursor: 'ns-resize', touchAction: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center' }}
+    >
+      {/* Tick lines */}
+      {Array.from({ length: 12 }).map((_, i) => (
+        <div key={i} style={{ position: 'absolute', left: 8, right: 8, top: `${(i / 11) * 100}%`, height: 1.5, borderRadius: 1, background: i / 11 >= pct / 100 ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.12)' }} />
+      ))}
+      {/* Fader handle */}
+      <div style={{ position: 'absolute', top: `${pct}%`, left: 0, right: 0, transform: 'translateY(-50%)', height: 4, background: 'white', borderRadius: 2, boxShadow: '0 1px 6px rgba(0,0,0,0.5)' }} />
+    </div>
+  )
+}
+
 // Slider for the mobile edit view — dark pill style with label + value
 function EditSlider({ label, value, display, min, max, onChange, onReset }) {
   const trackRef = useRef(null)
 
   const pct = Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100))
 
+  const getVal = useCallback((e) => {
+    const rect = trackRef.current.getBoundingClientRect()
+    return min + Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) * (max - min)
+  }, [min, max])
+
   const handlePointerDown = useCallback((e) => {
     e.currentTarget.setPointerCapture(e.pointerId)
-    const rect = e.currentTarget.getBoundingClientRect()
-    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
-    onChange(min + ratio * (max - min))
-  }, [min, max, onChange])
+    onChange(getVal(e))
+  }, [getVal, onChange])
 
   const handlePointerMove = useCallback((e) => {
     if (e.buttons === 0) return
-    const rect = trackRef.current.getBoundingClientRect()
-    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
-    onChange(min + ratio * (max - min))
-  }, [min, max, onChange])
+    onChange(getVal(e))
+  }, [getVal, onChange])
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'var(--bg-secondary)', borderRadius: 12, padding: '14px 16px' }}>
@@ -689,32 +722,55 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
             )}
 
             {editSubTab === 'stems' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ flex: 1, fontSize: 11, color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600 }}>STEMS</span>
-                  <button onClick={handleSeparate} disabled={separating} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 10, border: 'none', background: 'var(--bg-secondary)', color: 'var(--text-secondary)', fontSize: 13, cursor: separating ? 'wait' : 'pointer' }}>
-                    {separating ? <Loader2 size={12} strokeWidth={2} style={{ animation: 'spin 0.8s linear infinite' }} /> : <Scissors size={12} strokeWidth={2} />}
-                    {separating ? 'Separating…' : 'Auto'}
-                  </button>
-                  <button onClick={() => stemInputRef.current?.click()} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 10, border: 'none', background: 'var(--bg-secondary)', color: 'var(--text-secondary)', fontSize: 13, cursor: 'pointer' }}>
-                    <Plus size={12} strokeWidth={2} /> Add
-                  </button>
-                  <input ref={stemInputRef} type="file" accept="audio/*" style={{ display: 'none' }} onChange={handleStemUpload} />
-                </div>
-                {separating && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>AI separating vocals / drums / bass / other… may take several minutes.</span>}
-                {!separating && stems.length === 0 && <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>No stems yet. Tap Auto to separate with AI.</span>}
-                {stems.map(stem => (
-                  <div key={stem.id} style={{ display: 'flex', flexDirection: 'column', gap: 6, background: 'var(--bg-secondary)', borderRadius: 12, padding: '12px 14px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ flex: 1, fontSize: 14, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{stem.name}</span>
-                      <span style={{ fontSize: 13, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', minWidth: 36, textAlign: 'right' }}>{Math.round(stem.volume * 100)}%</span>
-                      <button onClick={() => handleDeleteStem(stem.id)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 0, padding: 2, flexShrink: 0 }}>
-                        <Trash2 size={14} strokeWidth={1.5} />
-                      </button>
-                    </div>
-                    <Slider value={stem.volume} min={0} max={1} step={0.01} onChange={v => handleStemVolumeChange(stem, Math.round(v * 100) / 100)} onReset={() => handleStemVolumeChange(stem, 1)} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, height: '100%' }}>
+                {/* Header row */}
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                  <div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)' }}>Stems</div>
+                    <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 2 }}>Split your track into stems</div>
                   </div>
-                ))}
+                  <button onClick={separating ? undefined : handleSeparate} disabled={separating} style={{ background: '#fff', border: 'none', borderRadius: 20, padding: '10px 20px', fontSize: 15, fontWeight: 600, color: '#000', cursor: separating ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                    {separating ? <Loader2 size={14} strokeWidth={2} style={{ animation: 'spin 0.8s linear infinite' }} /> : null}
+                    {separating ? 'Generating…' : 'Generate'}
+                  </button>
+                </div>
+                <input ref={stemInputRef} type="file" accept="audio/*" style={{ display: 'none' }} onChange={handleStemUpload} />
+
+                {/* Fader grid */}
+                <div style={{ display: 'flex', gap: 10, flex: 1, minHeight: 0 }}>
+                  {stems.length === 0 ? (
+                    /* Placeholder cards when no stems */
+                    ['vocals', 'drums', 'bass', 'other'].map(name => (
+                      <div key={name} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, background: 'var(--bg-secondary)', borderRadius: 16, padding: '16px 8px 12px', minHeight: 180 }}>
+                        <div style={{ flex: 1, width: '100%', position: 'relative' }}>
+                          {Array.from({ length: 12 }).map((_, i) => (
+                            <div key={i} style={{ position: 'absolute', left: 8, right: 8, top: `${(i / 11) * 100}%`, height: 1.5, borderRadius: 1, background: 'rgba(255,255,255,0.08)' }} />
+                          ))}
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', letterSpacing: '0.03em' }}>{name}</div>
+                        <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'rgba(255,255,255,0.15)' }} />
+                      </div>
+                    ))
+                  ) : (
+                    stems.map(stem => (
+                      <div key={stem.id} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, background: 'var(--bg-secondary)', borderRadius: 16, padding: '16px 8px 12px', minHeight: 180 }}>
+                        <VerticalFader
+                          value={stem.volume}
+                          onChange={v => handleStemVolumeChange(stem, Math.round(v * 100) / 100)}
+                          onReset={() => handleStemVolumeChange(stem, 1)}
+                        />
+                        <div style={{ fontSize: 12, color: 'var(--text-primary)', letterSpacing: '0.03em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{stem.name}</div>
+                        <div style={{ width: 6, height: 6, borderRadius: '50%', background: stem.volume > 0 ? 'var(--accent)' : 'rgba(255,255,255,0.2)' }} />
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {separating && (
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
+                    AI separating vocals / drums / bass / other… may take a few minutes.
+                  </div>
+                )}
               </div>
             )}
           </div>
