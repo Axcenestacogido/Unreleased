@@ -3,7 +3,7 @@ import {
   Play, Pause, SkipBack, SkipForward,
   Repeat, Disc3, Music2, ChevronDown,
   Plus, Trash2, Loader2, Zap, Scissors,
-  FileText, SlidersHorizontal,
+  FileText, SlidersHorizontal, X,
 } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { usePlayer } from '../../hooks/usePlayer'
