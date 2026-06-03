@@ -72,6 +72,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
   const qc = useQueryClient()
 
   const [activeTab, setActiveTab] = useState('edit')
+  const [mobileTab, setMobileTab] = useState(null)
   const [loopActive, setLoopActive] = useState(false)
   const [loopA, setLoopA] = useState(null)
   const [loopB, setLoopB] = useState(null)
@@ -500,8 +501,6 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
   // ── Mobile full-screen player ───────────────────────────────────────────────
   if (isMobile) {
     const cover = currentTrack.project_cover_image
-    const [mobileTab, setMobileTab] = useState(null) // null | 'notes' | 'edit'
-
     const toggleTab = (tab) => setMobileTab(prev => prev === tab ? null : tab)
 
     const btnStyle = (active) => ({
