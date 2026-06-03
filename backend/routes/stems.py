@@ -1,5 +1,10 @@
+import asyncio
 import os
+import shutil
+import subprocess
+import tempfile
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
@@ -7,16 +12,19 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, R
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from database import get_db
+from database import get_db, SessionLocal
 import models
 import schemas
 from auth import get_current_user
 from config import DATA_DIR
+from events import event_bus
 
 router = APIRouter(tags=["stems"])
 
 STEMS_DIR = Path(DATA_DIR) / "stems"
 CHUNK_SIZE = 1024 * 1024
+
+_executor = ThreadPoolExecutor(max_workers=2)
 
 
 def _get_stem_owned(stem_id: int, user: models.User, db: Session) -> models.Stem:
@@ -31,6 +39,125 @@ def _get_stem_owned(stem_id: int, user: models.User, db: Session) -> models.Stem
         raise HTTPException(status_code=404, detail="Stem not found")
     return stem
 
+
+# ── Separation ────────────────────────────────────────────────────────────────
+
+def _run_demucs(file_path: str, track_id: int, user_id: int) -> None:
+    """Runs in a thread pool. Creates stems and fires SSE when done."""
+    STEMS_DIR.mkdir(parents=True, exist_ok=True)
+    db = SessionLocal()
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cmd = [
+                "python", "-m", "demucs",
+                "--mp3", "--mp3-bitrate", "192",
+                "-n", "htdemucs",
+                "-o", tmpdir,
+                file_path,
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+
+            if result.returncode != 0:
+                event_bus.publish(user_id, {
+                    "type": "stems_error",
+                    "track_id": track_id,
+                    "message": result.stderr[-500:] if result.stderr else "Unknown error",
+                })
+                return
+
+            # Locate output: tmpdir/htdemucs/<basename>/<stem>.mp3
+            basename = Path(file_path).stem
+            stem_dir = Path(tmpdir) / "htdemucs" / basename
+
+            # Delete existing auto-stems for this track
+            db.query(models.Stem).filter(models.Stem.track_id == track_id).delete()
+            db.commit()
+
+            stem_names = ["vocals", "drums", "bass", "other"]
+            created = []
+            for name in stem_names:
+                src = stem_dir / f"{name}.mp3"
+                if not src.exists():
+                    continue
+                dest = STEMS_DIR / f"{uuid.uuid4()}.mp3"
+                shutil.copy(src, dest)
+                stem = models.Stem(
+                    track_id=track_id,
+                    name=name.capitalize(),
+                    file_path=str(dest),
+                    file_size=dest.stat().st_size,
+                    volume=1.0,
+                )
+                db.add(stem)
+                created.append(name)
+
+            db.commit()
+
+            stems_out = [
+                {"id": s.id, "name": s.name, "volume": s.volume, "file_size": s.file_size, "track_id": s.track_id, "created_at": s.created_at.isoformat()}
+                for s in db.query(models.Stem).filter(models.Stem.track_id == track_id).all()
+            ]
+
+            event_bus.publish(user_id, {
+                "type": "stems_ready",
+                "track_id": track_id,
+                "stems": stems_out,
+            })
+    except Exception as e:
+        event_bus.publish(user_id, {
+            "type": "stems_error",
+            "track_id": track_id,
+            "message": str(e),
+        })
+    finally:
+        db.close()
+
+
+@router.post("/api/tracks/{track_id}/separate")
+async def separate_stems(
+    track_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    track = (
+        db.query(models.Track)
+        .join(models.Project)
+        .filter(models.Track.id == track_id, models.Project.user_id == user.id)
+        .first()
+    )
+    if not track:
+        raise HTTPException(status_code=404, detail="Track not found")
+
+    ver = max(track.versions, key=lambda v: v.version_number) if track.versions else None
+    if not ver:
+        raise HTTPException(status_code=400, detail="No audio file")
+
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(_executor, _run_demucs, ver.file_path, track_id, user.id)
+
+    return {"status": "processing"}
+
+
+# ── GET stems list ────────────────────────────────────────────────────────────
+
+@router.get("/api/tracks/{track_id}/stems", response_model=list[schemas.StemOut])
+def list_stems(
+    track_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    track = (
+        db.query(models.Track)
+        .join(models.Project)
+        .filter(models.Track.id == track_id, models.Project.user_id == user.id)
+        .first()
+    )
+    if not track:
+        raise HTTPException(status_code=404)
+    return track.stems
+
+
+# ── Upload ────────────────────────────────────────────────────────────────────
 
 @router.post("/api/tracks/{track_id}/stems", response_model=schemas.StemOut, status_code=201)
 async def upload_stem(
@@ -72,6 +199,8 @@ async def upload_stem(
     return stem
 
 
+# ── Update / Delete ───────────────────────────────────────────────────────────
+
 @router.patch("/api/stems/{stem_id}", response_model=schemas.StemOut)
 def update_stem(
     stem_id: int,
@@ -104,6 +233,8 @@ def delete_stem(
     db.commit()
 
 
+# ── Stream ────────────────────────────────────────────────────────────────────
+
 @router.get("/api/stems/{stem_id}/stream")
 def stream_stem(
     stem_id: int,
@@ -133,8 +264,7 @@ def stream_stem(
                     remaining -= len(chunk)
 
         return StreamingResponse(
-            gen_range(),
-            status_code=206,
+            gen_range(), status_code=206,
             headers={
                 "Content-Range": f"bytes {start}-{end}/{file_size}",
                 "Accept-Ranges": "bytes",

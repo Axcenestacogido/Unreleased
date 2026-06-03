@@ -2,9 +2,9 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import {
   Play, Pause, SkipBack, SkipForward,
   Repeat, Disc3, Music2, X, ChevronDown,
-  Plus, Trash2, Loader2, Zap,
+  Plus, Trash2, Loader2, Zap, Scissors,
 } from 'lucide-react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { usePlayer } from '../../hooks/usePlayer'
 import { useAudioEngine } from '../../hooks/useAudioEngine'
 import api from '../../api/client'
@@ -78,24 +78,34 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
   const [bpm, setBpm] = useState('')
   const [key, setKey] = useState('')
   const [lyrics, setLyrics] = useState('')
-  const [stems, setStems] = useState([])
   const [analyzing, setAnalyzing] = useState(false)
+  const [separating, setSeparating] = useState(false)
   const saveTimeout = useRef(null)
   const stemInputRef = useRef(null)
+
+  // Fetch stems via query so SSE invalidation triggers a refresh
+  const { data: stems = [] } = useQuery({
+    queryKey: ['stems', currentTrack?.id],
+    queryFn: () => api.get(`/tracks/${currentTrack.id}/stems`).then(r => r.data),
+    enabled: !!currentTrack,
+    onSuccess: (data) => {
+      if (data.length > 0 && separating) setSeparating(false)
+    },
+  })
 
   useEffect(() => {
     if (!currentTrack) return
     setBpm(currentTrack.bpm != null ? String(currentTrack.bpm) : '')
     setKey(currentTrack.key_signature || '')
     setLyrics(currentTrack.lyrics || '')
-    setStems(currentTrack.stems || [])
+    setSeparating(false)
   }, [currentTrack?.id])
 
-  // Load stems into audio engine when track or stems change
+  // Sync stems to audio engine whenever they change
   useEffect(() => {
-    if (!currentTrack || !stems.length) return
+    if (!currentTrack) return
     engine.loadStems(stems)
-  }, [currentTrack?.id, stems.length])
+  }, [currentTrack?.id, stems])
 
   function scheduleSave(patch) {
     clearTimeout(saveTimeout.current)
@@ -179,6 +189,16 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
     }
   }
 
+  async function handleSeparate() {
+    setSeparating(true)
+    try {
+      await api.post(`/tracks/${currentTrack.id}/separate`)
+    } catch (e) {
+      setSeparating(false)
+      console.error('Separation failed:', e)
+    }
+  }
+
   async function handleStemUpload(e) {
     const file = e.target.files?.[0]
     if (!file) return
@@ -186,10 +206,8 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
     fd.append('file', file)
     fd.append('name', file.name.replace(/\.[^.]+$/, ''))
     try {
-      const res = await api.post(`/tracks/${currentTrack.id}/stems`, fd)
-      const newStem = res.data
-      setStems(prev => [...prev, newStem])
-      engine.loadStems([...stems, newStem])
+      await api.post(`/tracks/${currentTrack.id}/stems`, fd)
+      qc.invalidateQueries({ queryKey: ['stems', currentTrack.id] })
     } catch (e) {
       console.error('Stem upload failed:', e)
     }
@@ -198,7 +216,6 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
 
   async function handleStemVolumeChange(stem, volume) {
     engine.setStemVolume(stem.id, volume)
-    setStems(prev => prev.map(s => s.id === stem.id ? { ...s, volume } : s))
     try {
       await api.patch(`/stems/${stem.id}`, { volume })
     } catch {}
@@ -207,9 +224,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
   async function handleDeleteStem(stemId) {
     try {
       await api.delete(`/stems/${stemId}`)
-      const next = stems.filter(s => s.id !== stemId)
-      setStems(next)
-      engine.loadStems(next)
+      qc.invalidateQueries({ queryKey: ['stems', currentTrack.id] })
     } catch {}
   }
 
@@ -394,21 +409,39 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
 
             {/* Stems */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span className="mv-label">STEMS</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span className="mv-label" style={{ flex: 1 }}>STEMS</span>
+                <button onClick={handleSeparate} disabled={separating} title="Auto-separate stems with AI" style={{
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  padding: '3px 8px', borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--border)', background: 'transparent',
+                  color: 'var(--text-secondary)', fontSize: 'var(--text-xs)',
+                  cursor: separating ? 'wait' : 'pointer',
+                }}>
+                  {separating
+                    ? <Loader2 size={11} strokeWidth={2} style={{ animation: 'spin 0.8s linear infinite' }} />
+                    : <Scissors size={11} strokeWidth={2} />}
+                  {separating ? 'Separating…' : 'Auto'}
+                </button>
                 <button onClick={() => stemInputRef.current?.click()} style={{
                   display: 'flex', alignItems: 'center', gap: 4,
                   padding: '3px 8px', borderRadius: 'var(--radius-sm)',
                   border: '1px solid var(--border)', background: 'transparent',
                   color: 'var(--text-secondary)', fontSize: 'var(--text-xs)', cursor: 'pointer',
                 }}>
-                  <Plus size={11} strokeWidth={2} /> Add
+                  <Plus size={11} strokeWidth={2} /> Manual
                 </button>
                 <input ref={stemInputRef} type="file" accept="audio/*" style={{ display: 'none' }} onChange={handleStemUpload} />
               </div>
 
-              {stems.length === 0 && (
-                <span className="mv-meta" style={{ fontSize: 'var(--text-xs)' }}>No stems yet. Upload individual tracks to mix them.</span>
+              {separating && (
+                <span className="mv-meta" style={{ fontSize: 'var(--text-xs)' }}>
+                  AI separating vocals / drums / bass / other… this can take several minutes.
+                </span>
+              )}
+
+              {!separating && stems.length === 0 && (
+                <span className="mv-meta" style={{ fontSize: 'var(--text-xs)' }}>No stems. Use Auto to separate with AI, or Manual to upload.</span>
               )}
 
               {stems.map(stem => (
