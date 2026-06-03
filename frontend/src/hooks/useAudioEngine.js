@@ -198,6 +198,7 @@ export function useAudioEngine() {
     const newSpeed = Math.max(0.5, Math.min(2, s))
     if (playingRef.current) {
       startOffsetRef.current = _getDisplayTime()
+      startContextTimeRef.current = Tone.now()
     }
     speedRef.current = newSpeed
     setSpeedState(newSpeed)
@@ -205,7 +206,6 @@ export function useAudioEngine() {
     if (pitchShiftRef.current) {
       pitchShiftRef.current.pitch = pitchValueRef.current - 12 * Math.log2(newSpeed)
     }
-    _restartIfPlaying()
   }, [])
 
   const setPitch = useCallback((semitones) => {
@@ -214,7 +214,6 @@ export function useAudioEngine() {
     if (pitchShiftRef.current) {
       pitchShiftRef.current.pitch = semitones - 12 * Math.log2(speedRef.current)
     }
-    _restartIfPlaying()
   }, [])
 
   const setLoopPoints = useCallback((a, b) => {
