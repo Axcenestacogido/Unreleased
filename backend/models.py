@@ -68,6 +68,14 @@ class Track(Base):
             return max(self.versions, key=lambda v: v.version_number)
         return None
 
+    @property
+    def project_name(self):
+        return self.project.name if self.project else None
+
+    @property
+    def project_cover_image(self):
+        return self.project.cover_image if self.project else None
+
 
 class TrackVersion(Base):
     __tablename__ = "track_versions"

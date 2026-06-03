@@ -127,6 +127,8 @@ class TrackOut(BaseModel):
     bpm: Optional[int] = None
     key_signature: Optional[str] = None
     lyrics: Optional[str] = None
+    project_name: Optional[str] = None
+    project_cover_image: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime]
     versions: List[TrackVersionOut] = []
