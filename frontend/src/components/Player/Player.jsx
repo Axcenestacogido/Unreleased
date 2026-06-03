@@ -66,7 +66,7 @@ function IconBtn({ onClick, children, active, size = 32, title }) {
   )
 }
 
-export default function Player() {
+export default function Player({ isMobile = false }) {
   const { currentTrack, playNext, playPrev } = usePlayer()
   const engine = useAudioEngine()
   const qc = useQueryClient()
@@ -195,6 +195,45 @@ export default function Player() {
     border: '1px solid var(--border)', borderRadius: 'var(--radius-md)',
     padding: '7px 10px', fontSize: 'var(--text-sm)', color: 'var(--text-primary)',
     outline: 'none', fontFamily: 'var(--font-ui)',
+  }
+
+  // Mobile mini-player bar
+  if (isMobile) {
+    if (!currentTrack) return null
+    return (
+      <div style={{
+        position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 100,
+        height: 64, background: 'var(--bg-elevated)', borderTop: '1px solid var(--border)',
+        display: 'flex', alignItems: 'center', padding: '0 16px', gap: 12,
+      }}>
+        <div style={{
+          width: 40, height: 40, borderRadius: 'var(--radius-md)',
+          background: 'var(--bg-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexShrink: 0,
+        }}>
+          <Music2 size={18} strokeWidth={1} style={{ color: 'var(--text-muted)' }} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {currentTrack.name}
+          </div>
+          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {currentTrack.project_name || ''}
+          </div>
+        </div>
+        <IconBtn onClick={playPrev}><SkipBack size={18} strokeWidth={1.5} /></IconBtn>
+        <button onClick={togglePlay} style={{
+          width: 40, height: 40, borderRadius: '50%', border: 'none',
+          background: 'var(--bg-tertiary)', color: 'var(--text-primary)',
+          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          {engine.playing
+            ? <Pause size={18} strokeWidth={1.5} />
+            : <Play size={18} strokeWidth={1.5} style={{ marginLeft: 2 }} />}
+        </button>
+        <IconBtn onClick={playNext}><SkipForward size={18} strokeWidth={1.5} /></IconBtn>
+      </div>
+    )
   }
 
   return (
