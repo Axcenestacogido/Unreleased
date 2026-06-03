@@ -395,8 +395,12 @@ function FullScreenPlayer({ track, engine, onClose, onShare, onEditMeta, repeatM
 
 /* ── Projects tab ───────────────────────────────────────────────────────── */
 function ProjectsTab({ onPick }) {
+  const qc = useQueryClient()
   const matchProj = useMatch('/project/:id')
   const activeId = matchProj?.params?.id
+  const coverInputRef = useRef(null)
+  const pendingProjectId = useRef(null)
+
   const { data: projects = [] } = useQuery({
     queryKey: ['projects'],
     queryFn: () => api.get('/projects').then(r => r.data),
@@ -410,8 +414,38 @@ function ProjectsTab({ onPick }) {
   })
   const counts = Object.fromEntries((allTracks || []).map(t => [t.id, t.count]))
 
+  const uploadCover = useMutation({
+    mutationFn: ({ projectId, file }) => {
+      const fd = new FormData()
+      fd.append('file', file)
+      return api.post(`/projects/${projectId}/cover`, fd)
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['projects'] })
+      qc.invalidateQueries({ queryKey: ['tracks'] })
+    },
+  })
+
+  function openCoverPicker(e, projectId) {
+    e.stopPropagation()
+    pendingProjectId.current = projectId
+    coverInputRef.current.value = ''
+    coverInputRef.current.click()
+  }
+
   return (
     <div style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-primary)' }}>
+      <input
+        ref={coverInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: 'none' }}
+        onChange={e => {
+          const file = e.target.files?.[0]
+          if (file && pendingProjectId.current)
+            uploadCover.mutate({ projectId: pendingProjectId.current, file })
+        }}
+      />
       <div style={{ padding: '20px 16px 12px' }}>
         <h1 className="mv-h2">Projects</h1>
       </div>
@@ -420,24 +454,17 @@ function ProjectsTab({ onPick }) {
           const coverUrl = p.cover_path ? `/covers/${p.cover_path.split('/').pop()}` : null
           const isActive = activeId === String(p.id)
           return (
-            <button
-              key={p.id}
-              onClick={() => onPick(p.id)}
-              style={{
-                display: 'flex', flexDirection: 'column', padding: 0, border: 'none',
-                background: 'transparent', cursor: 'pointer', textAlign: 'left',
-                WebkitTapHighlightColor: 'transparent', borderRadius: 'var(--radius-lg)',
-                outline: isActive ? '2px solid rgba(255,255,255,0.3)' : 'none',
-                outlineOffset: 2,
-              }}
-            >
-              {/* Square cover */}
-              <div style={{
-                width: '100%', aspectRatio: '1', borderRadius: 'var(--radius-lg)',
-                background: 'var(--bg-tertiary)', border: '1px solid var(--border)',
-                overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                position: 'relative',
-              }}>
+            <div key={p.id} style={{ display: 'flex', flexDirection: 'column' }}>
+              {/* Square cover — tappable to open project */}
+              <div
+                onClick={() => onPick(p.id)}
+                style={{
+                  width: '100%', aspectRatio: '1', borderRadius: 'var(--radius-lg)',
+                  background: 'var(--bg-tertiary)', border: isActive ? '2px solid rgba(255,255,255,0.3)' : '1px solid var(--border)',
+                  overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  position: 'relative', cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
+                }}
+              >
                 {coverUrl
                   ? <img src={coverUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   : (
@@ -445,24 +472,44 @@ function ProjectsTab({ onPick }) {
                       <Disc3 size={36} strokeWidth={1} style={{ color: 'rgba(255,255,255,0.2)' }} />
                     </div>
                   )}
-                {/* Track count pill */}
+
+                {/* Camera button — top-right corner */}
+                <button
+                  onClick={e => openCoverPicker(e, p.id)}
+                  style={{
+                    position: 'absolute', top: 8, right: 8,
+                    width: 30, height: 30, borderRadius: 'var(--radius-full)',
+                    background: 'rgba(0,0,0,0.55)', border: 'none', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    WebkitTapHighlightColor: 'transparent',
+                    backdropFilter: 'blur(4px)',
+                  }}
+                >
+                  <Camera size={14} style={{ color: '#fff' }} />
+                </button>
+
+                {/* Track count — bottom-right */}
                 <div style={{
                   position: 'absolute', bottom: 8, right: 8,
                   background: 'rgba(0,0,0,0.6)', borderRadius: 'var(--radius-full)',
                   padding: '2px 8px', fontSize: 10, color: 'rgba(255,255,255,0.75)',
-                  fontFamily: 'var(--font-mono)',
+                  fontFamily: 'var(--font-mono)', pointerEvents: 'none',
                 }}>
                   {counts[p.id] ?? '…'}
                 </div>
               </div>
+
               {/* Name */}
-              <div style={{ padding: '8px 4px 4px' }}>
+              <div
+                onClick={() => onPick(p.id)}
+                style={{ padding: '8px 4px 4px', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
+              >
                 <div style={{
                   fontFamily: 'var(--font-display)', fontSize: 'var(--text-sm)', fontWeight: 500,
                   color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                 }}>{p.name}</div>
               </div>
-            </button>
+            </div>
           )
         })}
       </div>

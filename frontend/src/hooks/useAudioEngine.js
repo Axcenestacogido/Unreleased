@@ -254,6 +254,17 @@ export function useAudioEngine() {
     Tone.getDestination().volume.value = db
   }, [])
 
+  // Resume AudioContext when app comes back to foreground (PWA / tab switch)
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && playingRef.current) {
+        Tone.start().then(() => _startRaf()).catch(() => {})
+      }
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [])
+
   useEffect(() => {
     return () => {
       cancelAnimationFrame(rafRef.current)
