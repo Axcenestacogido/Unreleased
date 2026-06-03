@@ -33,9 +33,7 @@ export function useAudioEngine() {
 
   const playerRef = useRef(null)
   const pitchShiftRef = useRef(null)
-  const masterGainRef = useRef(null)
   const rafRef = useRef(null)
-  const stemPlayersRef = useRef([])
 
   const startContextTimeRef = useRef(0)
   const startOffsetRef = useRef(0)
@@ -63,30 +61,17 @@ export function useAudioEngine() {
     return t
   }
 
-  function _disposeStemPlayers() {
-    stemPlayersRef.current.forEach(({ player, gainNode }) => {
-      try { player.stop() } catch {}
-      try { player.dispose() } catch {}
-      try { gainNode.dispose() } catch {}
-    })
-    stemPlayersRef.current = []
-  }
-
   function _dispose() {
     cancelAnimationFrame(rafRef.current)
     try { playerRef.current?.stop() } catch {}
     playerRef.current?.dispose()
     pitchShiftRef.current?.dispose()
-    masterGainRef.current?.dispose()
-    _disposeStemPlayers()
     playerRef.current = null
     pitchShiftRef.current = null
-    masterGainRef.current = null
     setPlaying(false)
     playingRef.current = false
     setCurrentTime(0)
     startOffsetRef.current = 0
-    setLoadedTrackId(null)
   }
 
   function _startRaf() {
@@ -99,6 +84,17 @@ export function useAudioEngine() {
       rafRef.current = requestAnimationFrame(tick)
     }
     rafRef.current = requestAnimationFrame(tick)
+  }
+
+  // Stop and restart from current display position (avoids audio doubling after param changes)
+  function _restartIfPlaying() {
+    if (!playingRef.current || !playerRef.current) return
+    const pos = _getDisplayTime()
+    startOffsetRef.current = Math.max(0, Math.min(pos, durationRef.current - 0.05))
+    try { playerRef.current.stop() } catch {}
+    startContextTimeRef.current = Tone.now()
+    playerRef.current.start(Tone.now(), startOffsetRef.current)
+    _startRaf()
   }
 
   const loadTrack = useCallback(async (trackId) => {
@@ -136,24 +132,9 @@ export function useAudioEngine() {
       setPeaks(extractPeaks(webAudioBuffer))
 
       const toneBuffer = new Tone.ToneAudioBuffer(webAudioBuffer)
-      // masterGain lets us mute the full mix when stems are active
-      const masterGain = new Tone.Volume(0).toDestination()
-
-      // PitchShift starts in bypass (wet=0) so audio always plays via the dry
-      // path even if the AudioWorklet hasn't initialised yet. wet is raised to 1
-      // only when the user actually changes pitch or speed.
-      let pitchShift = null
-      let audioSink = masterGain
-      try {
-        const ps = new Tone.PitchShift({ pitch: 0, wet: 0 })
-        ps.connect(masterGain)
-        pitchShift = ps
-        audioSink = ps
-      } catch (e) {
-        console.warn('PitchShift unavailable, using direct connection:', e)
-      }
-
-      const player = new Tone.Player(toneBuffer).connect(audioSink)
+      const pitchShift = new Tone.PitchShift(0).toDestination()
+      pitchShift.wet.value = 1
+      const player = new Tone.Player(toneBuffer).connect(pitchShift)
       player.playbackRate = 1
 
       player.onstop = () => {
@@ -168,10 +149,8 @@ export function useAudioEngine() {
         }
       }
 
-      masterGainRef.current = masterGain
-      pitchShiftRef.current = pitchShift  // may be null if PitchShift failed
+      pitchShiftRef.current = pitchShift
       playerRef.current = player
-      console.log('[audio] track loaded, player ready, pitchShift:', !!pitchShift)
       setLoadedTrackId(trackId)
     } catch (err) {
       console.error('Audio load error:', err)
@@ -191,11 +170,6 @@ export function useAudioEngine() {
     playingRef.current = true
     setPlaying(true)
     playerRef.current.start(Tone.now(), startOffsetRef.current)
-    stemPlayersRef.current.forEach(({ player }) => {
-      try { player.stop() } catch {}
-      player.playbackRate = speedRef.current
-      player.start(Tone.now(), startOffsetRef.current)
-    })
     _startRaf()
   }, [])
 
@@ -206,7 +180,6 @@ export function useAudioEngine() {
     setPlaying(false)
     cancelAnimationFrame(rafRef.current)
     try { playerRef.current.stop() } catch {}
-    stemPlayersRef.current.forEach(({ player }) => { try { player.stop() } catch {} })
   }, [])
 
   const seek = useCallback((t) => {
@@ -217,16 +190,10 @@ export function useAudioEngine() {
     if (playingRef.current && playerRef.current) {
       try { playerRef.current.stop() } catch {}
       playerRef.current.start(Tone.now(), clamped)
-      stemPlayersRef.current.forEach(({ player }) => {
-        try { player.stop() } catch {}
-        player.playbackRate = speedRef.current
-        player.start(Tone.now(), clamped)
-      })
       _startRaf()
     }
   }, [])
 
-  // Change speed dynamically without restarting — updates playbackRate on all active players
   const setSpeed = useCallback((s) => {
     const newSpeed = Math.max(0.5, Math.min(2, s))
     if (playingRef.current) {
@@ -237,25 +204,15 @@ export function useAudioEngine() {
     setSpeedState(newSpeed)
     if (playerRef.current) playerRef.current.playbackRate = newSpeed
     if (pitchShiftRef.current) {
-      try {
-        pitchShiftRef.current.pitch.value = pitchValueRef.current - 12 * Math.log2(newSpeed)
-        pitchShiftRef.current.wet.value = (pitchValueRef.current !== 0 || newSpeed !== 1) ? 1 : 0
-      } catch {}
+      pitchShiftRef.current.pitch = pitchValueRef.current - 12 * Math.log2(newSpeed)
     }
-    stemPlayersRef.current.forEach(({ player }) => {
-      player.playbackRate = newSpeed
-    })
   }, [])
 
-  // Change pitch dynamically via PitchShift node — no audio restart needed
   const setPitch = useCallback((semitones) => {
     pitchValueRef.current = semitones
     setPitchState(semitones)
     if (pitchShiftRef.current) {
-      try {
-        pitchShiftRef.current.pitch.value = semitones - 12 * Math.log2(speedRef.current)
-        pitchShiftRef.current.wet.value = (semitones !== 0 || speedRef.current !== 1) ? 1 : 0
-      } catch {}
+      pitchShiftRef.current.pitch = semitones - 12 * Math.log2(speedRef.current)
     }
   }, [])
 
@@ -278,6 +235,7 @@ export function useAudioEngine() {
     if (playerRef.current) {
       playerRef.current.loop = enabled
     }
+    // Reset time tracking origin when toggling loop off so position is accurate
     if (!enabled && playingRef.current) {
       startOffsetRef.current = _getDisplayTime()
       startContextTimeRef.current = Tone.now()
@@ -285,53 +243,21 @@ export function useAudioEngine() {
   }, [])
 
   useEffect(() => {
-    // Unlock AudioContext on first user gesture so subsequent loadTrack calls work
-    const unlock = () => { Tone.start().catch(() => {}) }
-    document.addEventListener('pointerdown', unlock, { once: true })
-    document.addEventListener('keydown', unlock, { once: true })
     return () => {
-      document.removeEventListener('pointerdown', unlock)
-      document.removeEventListener('keydown', unlock)
       cancelAnimationFrame(rafRef.current)
       _dispose()
     }
   }, [])
 
-  const loadStems = useCallback(async (stems) => {
-    _disposeStemPlayers()
-    const token = localStorage.getItem('token')
-    for (const stem of stems) {
-      try {
-        const res = await fetch(`/api/stems/${stem.id}/stream`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        if (!res.ok) continue
-        const arrayBuffer = await res.arrayBuffer()
-        const webAudioBuffer = await Tone.context.rawContext.decodeAudioData(arrayBuffer)
-        const toneBuffer = new Tone.ToneAudioBuffer(webAudioBuffer)
-        const gainNode = new Tone.Volume(stem.volume <= 0 ? -Infinity : 20 * Math.log10(stem.volume))
-        gainNode.toDestination()
-        const player = new Tone.Player(toneBuffer).connect(gainNode)
-        stemPlayersRef.current.push({ id: stem.id, player, gainNode })
-      } catch (e) {
-        console.error('Stem load error:', e)
-      }
-    }
-    // Mute the full-mix track when stems are active so they don't double up
-    if (masterGainRef.current) {
-      masterGainRef.current.volume.value = stems.length > 0 ? -Infinity : 0
-    }
-  }, [])
-
-  const setStemVolume = useCallback((stemId, volume) => {
-    const s = stemPlayersRef.current.find((s) => s.id === stemId)
-    if (s) s.gainNode.volume.value = volume <= 0 ? -Infinity : 20 * Math.log10(volume)
-  }, [])
+  const loadStems = useCallback(() => {}, [])
+  const setStemVolume = useCallback(() => {}, [])
 
   return {
     isLoading, peaks, duration, playing, currentTime,
-    speed, pitch, loopEnabled, loopA, loopB, loadedTrackId,
-    loadTrack, loadStems, setStemVolume, play, pause, seek,
+    speed, pitch, loopEnabled, loopA, loopB,
+    loadedTrackId,
+    loadTrack, play, pause, seek,
     setSpeed, setPitch, setLoopPoints, setLoopEnabled,
+    loadStems, setStemVolume,
   }
 }
