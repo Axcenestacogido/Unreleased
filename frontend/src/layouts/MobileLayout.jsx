@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Play, Pause, SkipBack, SkipForward, ChevronDown,
   Music2, House, Disc3, Search, Upload, Repeat, Shuffle, Volume2,
-  Share2, ChevronRight, Pencil, Camera, Check, X,
+  Share2, ChevronRight, Pencil, Camera, Check, X, ArrowDownToLine,
 } from 'lucide-react'
 import { usePlayer } from '../hooks/usePlayer'
 import { useAudioEngine } from '../hooks/useAudioEngine'
@@ -193,7 +193,26 @@ function FullScreenPlayer({ track, engine, onClose, onShare, onEditMeta, repeatM
   const qc = useQueryClient()
   const [loopA, setLoopAState] = useState(null) // seconds or null
   const [loopB, setLoopBState] = useState(null)
+  const [downloading, setDownloading] = useState(false)
+  const scrubRef = useRef({ wasPlaying: false })
   const coverInputRef = useRef(null)
+
+  function handleScrubStart() {
+    scrubRef.current.wasPlaying = engine.playing
+    if (engine.playing) engine.pause()
+  }
+
+  function handleScrubEnd(t) {
+    engine.seek(t)
+    if (scrubRef.current.wasPlaying) engine.play()
+  }
+
+  async function handleDownload() {
+    if (!track || downloading || engine.isCached) return
+    setDownloading(true)
+    await engine.downloadTrack(track.id)
+    setDownloading(false)
+  }
 
   const uploadCover = useMutation({
     mutationFn: (file) => {
@@ -260,6 +279,11 @@ function FullScreenPlayer({ track, engine, onClose, onShare, onEditMeta, repeatM
           <button onClick={onEditMeta} style={TAP}>
             <Pencil size={18} style={{ color: 'var(--text-secondary)' }} />
           </button>
+          <button onClick={handleDownload} disabled={engine.isCached || downloading} style={{ ...TAP, opacity: engine.isCached ? 0.4 : 1 }}>
+            {downloading
+              ? <div style={{ width: 18, height: 18, border: '2px solid var(--text-muted)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+              : <ArrowDownToLine size={18} style={{ color: engine.isCached ? 'var(--text-muted)' : 'var(--text-secondary)' }} />}
+          </button>
         </div>
       </div>
 
@@ -292,6 +316,8 @@ function FullScreenPlayer({ track, engine, onClose, onShare, onEditMeta, repeatM
           <WaveCanvas
             peaks={engine.peaks} currentTime={engine.currentTime} duration={engine.duration}
             onSeek={(t) => engine.seek(t)}
+            onScrubStart={handleScrubStart}
+            onScrubEnd={handleScrubEnd}
             loopA={loopA ?? 0}
             loopB={loopB ?? engine.duration}
             loopEnabled={loopA != null && loopB != null}

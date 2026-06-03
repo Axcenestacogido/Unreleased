@@ -1,5 +1,6 @@
 import { useRef, useState, useCallback, useEffect } from 'react'
 import * as Tone from 'tone'
+import { getCachedAudio, cacheAudio, isAudioCached } from '../utils/audioCache'
 
 function extractPeaks(audioBuffer, numBars = 300) {
   const data = audioBuffer.getChannelData(0)
@@ -30,6 +31,7 @@ export function useAudioEngine() {
   const [loopA, setLoopA] = useState(0)
   const [loopB, setLoopB] = useState(0)
   const [volume, setVolumeState] = useState(0.8)
+  const [isCached, setIsCached] = useState(false)
 
   const playerRef = useRef(null)
   const pitchShiftRef = useRef(null)
@@ -89,19 +91,31 @@ export function useAudioEngine() {
     setLoopEnabledState(false)
     setLoopA(0)
     setLoopB(0)
+    setIsCached(false)
 
     try {
       await Tone.start()
-      const token = localStorage.getItem('token')
-      const res = await fetch(`/api/tracks/${trackId}/stream`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (!res.ok) throw new Error('Stream failed')
 
-      // Bail if a newer loadTrack was called while fetching
+      // Check local cache first — instant load on repeat plays
+      let arrayBuffer = await getCachedAudio(trackId)
       if (gen !== loadGenRef.current) return
 
-      const arrayBuffer = await res.arrayBuffer()
+      if (arrayBuffer) {
+        setIsCached(true)
+      } else {
+        const token = localStorage.getItem('token')
+        const res = await fetch(`/api/tracks/${trackId}/stream`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (!res.ok) throw new Error('Stream failed')
+        if (gen !== loadGenRef.current) return
+        arrayBuffer = await res.arrayBuffer()
+        if (gen !== loadGenRef.current) return
+        // Cache a copy in the background (decodeAudioData may detach the original)
+        cacheAudio(trackId, arrayBuffer.slice(0)).then(() => {
+          if (gen === loadGenRef.current) setIsCached(true)
+        })
+      }
 
       if (gen !== loadGenRef.current) return
 
@@ -221,6 +235,18 @@ export function useAudioEngine() {
     }
   }, [])
 
+  // Explicitly pre-download a track into IndexedDB without playing it
+  const downloadTrack = useCallback(async (trackId) => {
+    const already = await isAudioCached(trackId)
+    if (already) return
+    const token = localStorage.getItem('token')
+    const res = await fetch(`/api/tracks/${trackId}/stream`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) return
+    await cacheAudio(trackId, await res.arrayBuffer())
+  }, [])
+
   const setVolume = useCallback((v) => {
     const clamped = Math.max(0, Math.min(1, v))
     setVolumeState(clamped)
@@ -236,9 +262,9 @@ export function useAudioEngine() {
   }, [])
 
   return {
-    isLoading, peaks, duration, playing, currentTime,
+    isLoading, isCached, peaks, duration, playing, currentTime,
     speed, pitch, loopEnabled, loopA, loopB, volume,
-    loadTrack, play, pause, seek,
+    loadTrack, downloadTrack, play, pause, seek,
     setSpeed, setPitch, setLoopPoints, setLoopEnabled, setVolume,
   }
 }

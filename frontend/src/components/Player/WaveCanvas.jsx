@@ -6,7 +6,9 @@ export default function WaveCanvas({
   peaks = [],
   currentTime = 0,
   duration = 0,
-  onSeek,
+  onSeek,       // called on tap (instant seek)
+  onScrubStart, // called when drag begins (pause audio)
+  onScrubEnd,   // called on drag release with final time (seek + resume)
   loopA = 0,
   loopB = 0,
   loopEnabled = false,
@@ -19,13 +21,15 @@ export default function WaveCanvas({
   const timeRef = useRef(currentTime)
   const durationRef = useRef(duration)
   const loopRef = useRef({ a: loopA, b: loopB, enabled: loopEnabled })
-  const dragRef = useRef(null) // { startX, startTime }
+  // dragRef.dragTime: visual override time during drag (null = not dragging)
+  const dragRef = useRef(null)
 
   peaksRef.current = peaks
   timeRef.current = currentTime
   durationRef.current = duration
   loopRef.current = { a: loopA, b: loopB, enabled: loopEnabled }
 
+  // Returns display metrics. Uses drag override time when dragging.
   function getMetrics() {
     const canvas = canvasRef.current
     if (!canvas) return null
@@ -36,7 +40,8 @@ export default function WaveCanvas({
     const totalVW = numBars * step
     const playheadX = W * PLAYHEAD_RATIO
     const dur = durationRef.current || 1
-    const progress = dur > 0 ? timeRef.current / dur : 0
+    const displayTime = (dragRef.current?.dragTime != null) ? dragRef.current.dragTime : timeRef.current
+    const progress = dur > 0 ? displayTime / dur : 0
     const currentVX = progress * totalVW
     const offset = currentVX - playheadX
     return { W, ps, barW, barGap, step, numBars, totalVW, playheadX, dur, progress, currentVX, offset }
@@ -57,7 +62,8 @@ export default function WaveCanvas({
     const { a, b, enabled } = loopRef.current
     const dur = durationRef.current
     const ps = peaksRef.current
-    const progress = dur > 0 ? timeRef.current / dur : 0
+    const displayTime = (dragRef.current?.dragTime != null) ? dragRef.current.dragTime : timeRef.current
+    const progress = dur > 0 ? displayTime / dur : 0
 
     const barW = 2, barGap = 1, step = barW + barGap
     const numBars = ps.length || Math.floor(W / step)
@@ -78,7 +84,8 @@ export default function WaveCanvas({
       }
     }
 
-    // Bars
+    // Bars — slightly dimmed when dragging to indicate scrub mode
+    const pastColor = dragRef.current?.moved ? 'rgba(255,255,255,0.5)' : '#ffffff'
     for (let i = 0; i < numBars; i++) {
       const vx = i * step
       const sx = vx - offset
@@ -87,7 +94,7 @@ export default function WaveCanvas({
       const peak = ps[i] ?? 0
       const barH = Math.max(2, peak * H * 0.85)
       const y = (H - barH) / 2
-      ctx.fillStyle = vx < currentVX ? '#ffffff' : '#2a2a2a'
+      ctx.fillStyle = vx < currentVX ? pastColor : '#2a2a2a'
       ctx.fillRect(sx, y, barW, barH)
     }
 
@@ -139,42 +146,66 @@ export default function WaveCanvas({
     return () => { running = false; cancelAnimationFrame(animRef.current) }
   }, [draw])
 
-  function screenXToTime(screenX) {
-    const m = getMetrics()
-    if (!m) return 0
-    const virtualX = screenX + m.offset
-    return Math.max(0, Math.min(m.dur, (virtualX / m.totalVW) * m.dur))
+  // Convert drag delta to time (based on start position, not current display)
+  function deltaToTime(dx) {
+    const canvas = canvasRef.current
+    if (!canvas || !dragRef.current) return null
+    const W = canvas.offsetWidth
+    const ps = peaksRef.current
+    const step = 3
+    const numBars = ps.length || Math.floor(W / step)
+    const totalVW = numBars * step
+    const dur = durationRef.current || 1
+    const t = dragRef.current.startTime - (dx / totalVW) * dur
+    return Math.max(0, Math.min(dur, t))
   }
 
-  function applySeek(screenX) {
-    const t = screenXToTime(screenX)
+  function tapTimeAt(screenX) {
+    const canvas = canvasRef.current
+    if (!canvas) return 0
+    const W = canvas.offsetWidth
+    const ps = peaksRef.current
+    const step = 3
+    const numBars = ps.length || Math.floor(W / step)
+    const totalVW = numBars * step
+    const playheadX = W * PLAYHEAD_RATIO
+    const dur = durationRef.current || 1
+    const displayTime = timeRef.current
+    const currentVX = (displayTime / dur) * totalVW
+    const offset = currentVX - playheadX
+    return Math.max(0, Math.min(dur, ((screenX + offset) / totalVW) * dur))
+  }
+
+  function applyTap(screenX) {
+    const t = tapTimeAt(screenX)
     if (clickMode === 'seek') {
       onSeek?.(t)
     } else if (clickMode === 'setA') {
-      const bVal = Math.max(loopRef.current.b, t + 0.5)
-      onSeek?.(null, t, bVal)
+      onSeek?.(null, t, Math.max(loopRef.current.b, t + 0.5))
       onClickDone?.()
     } else if (clickMode === 'setB') {
-      const aVal = Math.min(loopRef.current.a, t - 0.5)
-      onSeek?.(null, aVal, t)
+      onSeek?.(null, Math.min(loopRef.current.a, t - 0.5), t)
       onClickDone?.()
     }
   }
 
-  // Mouse drag
+  // ── Mouse ────────────────────────────────────────────────────────────────
   function handleMouseDown(e) {
-    const rect = e.currentTarget.getBoundingClientRect()
-    dragRef.current = { startX: e.clientX, startTime: timeRef.current, moved: false }
+    dragRef.current = { startX: e.clientX, startTime: timeRef.current, moved: false, dragTime: null }
     const onMove = (ev) => {
       const dx = ev.clientX - dragRef.current.startX
-      if (Math.abs(dx) > 4) dragRef.current.moved = true
+      if (Math.abs(dx) > 4 && !dragRef.current.moved) {
+        dragRef.current.moved = true
+        onScrubStart?.()
+      }
       if (!dragRef.current.moved) return
-      const m = getMetrics()
-      if (!m) return
-      const newTime = dragRef.current.startTime - (dx / m.totalVW) * m.dur
-      onSeek?.(Math.max(0, Math.min(m.dur, newTime)))
+      dragRef.current.dragTime = deltaToTime(dx)
     }
     const onUp = () => {
+      if (dragRef.current?.moved && dragRef.current.dragTime != null) {
+        onScrubEnd?.(dragRef.current.dragTime)
+      }
+      dragRef.current = null
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
     }
@@ -183,15 +214,16 @@ export default function WaveCanvas({
   }
 
   function handleClick(e) {
-    if (dragRef.current?.moved) return
+    // Only fire on genuine taps (drag was handled in mouseup)
+    if (dragRef.current !== null) return
     const rect = e.currentTarget.getBoundingClientRect()
-    applySeek(e.clientX - rect.left)
+    applyTap(e.clientX - rect.left)
   }
 
-  // Touch drag
+  // ── Touch ────────────────────────────────────────────────────────────────
   function handleTouchStart(e) {
     const t = e.touches[0]
-    dragRef.current = { startX: t.clientX, startTime: timeRef.current, moved: false }
+    dragRef.current = { startX: t.clientX, startTime: timeRef.current, moved: false, dragTime: null }
   }
 
   function handleTouchMove(e) {
@@ -199,19 +231,22 @@ export default function WaveCanvas({
     e.preventDefault()
     const t = e.touches[0]
     const dx = t.clientX - dragRef.current.startX
-    if (Math.abs(dx) > 4) dragRef.current.moved = true
+    if (Math.abs(dx) > 4 && !dragRef.current.moved) {
+      dragRef.current.moved = true
+      onScrubStart?.()
+    }
     if (!dragRef.current.moved) return
-    const m = getMetrics()
-    if (!m) return
-    const newTime = dragRef.current.startTime - (dx / m.totalVW) * m.dur
-    onSeek?.(Math.max(0, Math.min(m.dur, newTime)))
+    dragRef.current.dragTime = deltaToTime(dx)
   }
 
   function handleTouchEnd(e) {
-    if (!dragRef.current?.moved) {
+    if (!dragRef.current) return
+    if (dragRef.current.moved && dragRef.current.dragTime != null) {
+      onScrubEnd?.(dragRef.current.dragTime)
+    } else if (!dragRef.current.moved) {
       const rect = e.currentTarget.getBoundingClientRect()
       const t = e.changedTouches[0]
-      applySeek(t.clientX - rect.left)
+      applyTap(t.clientX - rect.left)
     }
     dragRef.current = null
   }
