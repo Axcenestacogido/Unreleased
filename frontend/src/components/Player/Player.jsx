@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import {
   Play, Pause, SkipBack, SkipForward,
-  Repeat, Music2, ChevronDown,
+  Repeat, Disc3, Music2, ChevronDown,
   Plus, Trash2, Loader2, Zap, Scissors,
   FileText, SlidersHorizontal,
 } from 'lucide-react'

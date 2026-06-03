@@ -267,7 +267,13 @@ export function useAudioEngine() {
   }, [])
 
   useEffect(() => {
+    // Unlock AudioContext on first user gesture so subsequent loadTrack calls work
+    const unlock = () => { Tone.start().catch(() => {}) }
+    document.addEventListener('pointerdown', unlock, { once: true })
+    document.addEventListener('keydown', unlock, { once: true })
     return () => {
+      document.removeEventListener('pointerdown', unlock)
+      document.removeEventListener('keydown', unlock)
       cancelAnimationFrame(rafRef.current)
       _dispose()
     }
