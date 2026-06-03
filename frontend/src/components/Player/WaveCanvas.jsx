@@ -74,6 +74,12 @@ export default function WaveCanvas({
       }
     }
 
+    // Resolve CSS vars (canvas doesn't support them in fillStyle)
+    const style = getComputedStyle(canvas)
+    const activeColor = style.getPropertyValue('--waveform-active').trim() || '#ffffff'
+    const inactiveColor = style.getPropertyValue('--waveform-inactive').trim() || '#333333'
+    const cursorColor2 = style.getPropertyValue('--waveform-cursor').trim() || '#ffffff'
+
     // Bars
     for (let i = 0; i < numBars; i++) {
       const x = centerX + (i - centerBar) * STEP
@@ -81,10 +87,7 @@ export default function WaveCanvas({
       const peak = ps[i] ?? 0
       const barH = Math.max(2, peak * H * 0.85)
       const y = (H - barH) / 2
-      const isPast = i < centerBar
-      ctx.fillStyle = isPast
-        ? 'var(--waveform-active, #fff)'
-        : 'var(--waveform-inactive, #2a2a2a)'
+      ctx.fillStyle = i < centerBar ? activeColor : inactiveColor
       ctx.fillRect(x, y, BAR_W, barH)
     }
 
@@ -93,18 +96,19 @@ export default function WaveCanvas({
       const drawMarker = (mt, label) => {
         const mx = centerX + (mt - t) * pxPerSec
         if (mx < -4 || mx > W + 4) return
-        ctx.fillStyle = 'rgba(255,255,255,0.55)'
+        ctx.fillStyle = activeColor
+        ctx.globalAlpha = 0.55
         ctx.fillRect(mx - 1, 0, 2, H)
         ctx.font = '9px monospace'
-        ctx.fillStyle = 'rgba(255,255,255,0.55)'
         ctx.fillText(label, mx + 3, 10)
+        ctx.globalAlpha = 1
       }
       if (enabled || a > 0) drawMarker(a, 'A')
       if (enabled || b < dur) drawMarker(b, 'B')
     }
 
     // Fixed center cursor
-    ctx.fillStyle = 'var(--waveform-cursor, rgba(255,255,255,0.9))'
+    ctx.fillStyle = cursorColor2 || '#ffffff'
     ctx.fillRect(centerX - 1, 0, 2, H)
   }, [])
 
