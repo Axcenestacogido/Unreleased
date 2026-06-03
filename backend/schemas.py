@@ -39,6 +39,7 @@ class ProjectOut(BaseModel):
     name: str
     description: Optional[str]
     color: Optional[str]
+    cover_path: Optional[str] = None
     created_at: datetime
     class Config:
         from_attributes = True
@@ -77,6 +78,10 @@ class TrackVersionOut(BaseModel):
 # Tracks
 class TrackUpdate(BaseModel):
     name: Optional[str] = None
+    artist: Optional[str] = None
+    album: Optional[str] = None
+    year: Optional[int] = None
+    genre: Optional[str] = None
     folder_id: Optional[int] = None
     project_id: Optional[int] = None  # for cross-project moves
 
@@ -104,6 +109,12 @@ class TrackOut(BaseModel):
     project_id: int
     folder_id: Optional[int]
     name: str
+    artist: Optional[str] = None
+    album: Optional[str] = None
+    year: Optional[int] = None
+    genre: Optional[str] = None
+    project_name: Optional[str] = None
+    project_cover_url: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime]
     versions: List[TrackVersionOut] = []

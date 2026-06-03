@@ -23,9 +23,16 @@ export function PlayerProvider({ children }) {
     if (idx > 0) setCurrentTrack(queue[idx - 1])
   }, [currentTrack, queue])
 
+  const playRandom = useCallback(() => {
+    if (!queue.length) return
+    const others = queue.filter(t => t.id !== currentTrack?.id)
+    if (!others.length) return
+    setCurrentTrack(others[Math.floor(Math.random() * others.length)])
+  }, [currentTrack, queue])
+
   return React.createElement(
     PlayerContext.Provider,
-    { value: { currentTrack, play, playNext, playPrev } },
+    { value: { currentTrack, play, playNext, playPrev, playRandom } },
     children
   )
 }

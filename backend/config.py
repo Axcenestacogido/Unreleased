@@ -6,8 +6,11 @@ DATA_DIR = Path(os.getenv("DATA_DIR", BASE_DIR / "data"))
 AUDIO_DIR = DATA_DIR / "audio"
 DB_PATH = DATA_DIR / "musicvault.db"
 
+COVERS_DIR = DATA_DIR / "covers"
+
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+COVERS_DIR.mkdir(parents=True, exist_ok=True)
 
 DATABASE_URL = f"sqlite:///{DB_PATH}"
 SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production-please")

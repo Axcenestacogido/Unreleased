@@ -23,6 +23,7 @@ class Project(Base):
     name = Column(String, nullable=False)
     description = Column(Text, nullable=True)
     color = Column(String, nullable=True)
+    cover_path = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -49,6 +50,10 @@ class Track(Base):
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
     folder_id = Column(Integer, ForeignKey("folders.id"), nullable=True)
     name = Column(String, nullable=False)
+    artist = Column(String, nullable=True)
+    album = Column(String, nullable=True)
+    year = Column(Integer, nullable=True)
+    genre = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -61,6 +66,17 @@ class Track(Base):
     def current_version(self):
         if self.versions:
             return max(self.versions, key=lambda v: v.version_number)
+        return None
+
+    @property
+    def project_name(self):
+        return self.project.name if self.project else None
+
+    @property
+    def project_cover_url(self):
+        if self.project and self.project.cover_path:
+            import os
+            return f"/covers/{os.path.basename(self.project.cover_path)}"
         return None
 
 

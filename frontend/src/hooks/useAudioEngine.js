@@ -29,6 +29,7 @@ export function useAudioEngine() {
   const [loopEnabled, setLoopEnabledState] = useState(false)
   const [loopA, setLoopA] = useState(0)
   const [loopB, setLoopB] = useState(0)
+  const [volume, setVolumeState] = useState(0.8)
 
   const playerRef = useRef(null)
   const pitchShiftRef = useRef(null)
@@ -197,6 +198,13 @@ export function useAudioEngine() {
     }
   }, [])
 
+  const setVolume = useCallback((v) => {
+    const clamped = Math.max(0, Math.min(1, v))
+    setVolumeState(clamped)
+    const db = clamped <= 0 ? -Infinity : 20 * Math.log10(Math.max(clamped, 0.0001))
+    Tone.getDestination().volume.value = db
+  }, [])
+
   const setLoopEnabled = useCallback((enabled) => {
     setLoopEnabledState(enabled)
     if (playerRef.current) {
@@ -213,8 +221,8 @@ export function useAudioEngine() {
 
   return {
     isLoading, peaks, duration, playing, currentTime,
-    speed, pitch, loopEnabled, loopA, loopB,
+    speed, pitch, loopEnabled, loopA, loopB, volume,
     loadTrack, play, pause, seek,
-    setSpeed, setPitch, setLoopPoints, setLoopEnabled,
+    setSpeed, setPitch, setLoopPoints, setLoopEnabled, setVolume,
   }
 }
