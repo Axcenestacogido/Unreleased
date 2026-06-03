@@ -139,12 +139,13 @@ export function useAudioEngine() {
       // masterGain lets us mute the full mix when stems are active
       const masterGain = new Tone.Volume(0).toDestination()
 
-      // PitchShift may fail in certain browser/worklet configurations — fall back
-      // to a direct connection so audio always plays even without pitch control.
+      // PitchShift starts in bypass (wet=0) so audio always plays via the dry
+      // path even if the AudioWorklet hasn't initialised yet. wet is raised to 1
+      // only when the user actually changes pitch or speed.
       let pitchShift = null
       let audioSink = masterGain
       try {
-        const ps = new Tone.PitchShift({ pitch: 0, wet: 1 })
+        const ps = new Tone.PitchShift({ pitch: 0, wet: 0 })
         ps.connect(masterGain)
         pitchShift = ps
         audioSink = ps
@@ -236,7 +237,10 @@ export function useAudioEngine() {
     setSpeedState(newSpeed)
     if (playerRef.current) playerRef.current.playbackRate = newSpeed
     if (pitchShiftRef.current) {
-      try { pitchShiftRef.current.pitch.value = pitchValueRef.current - 12 * Math.log2(newSpeed) } catch {}
+      try {
+        pitchShiftRef.current.pitch.value = pitchValueRef.current - 12 * Math.log2(newSpeed)
+        pitchShiftRef.current.wet.value = (pitchValueRef.current !== 0 || newSpeed !== 1) ? 1 : 0
+      } catch {}
     }
     stemPlayersRef.current.forEach(({ player }) => {
       player.playbackRate = newSpeed
@@ -248,7 +252,10 @@ export function useAudioEngine() {
     pitchValueRef.current = semitones
     setPitchState(semitones)
     if (pitchShiftRef.current) {
-      try { pitchShiftRef.current.pitch.value = semitones - 12 * Math.log2(speedRef.current) } catch {}
+      try {
+        pitchShiftRef.current.pitch.value = semitones - 12 * Math.log2(speedRef.current)
+        pitchShiftRef.current.wet.value = (semitones !== 0 || speedRef.current !== 1) ? 1 : 0
+      } catch {}
     }
   }, [])
 
