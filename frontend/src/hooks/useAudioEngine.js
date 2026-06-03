@@ -29,6 +29,7 @@ export function useAudioEngine() {
   const [loopEnabled, setLoopEnabledState] = useState(false)
   const [loopA, setLoopA] = useState(0)
   const [loopB, setLoopB] = useState(0)
+  const [loadedTrackId, setLoadedTrackId] = useState(null)
 
   const playerRef = useRef(null)
   const pitchShiftRef = useRef(null)
@@ -150,6 +151,7 @@ export function useAudioEngine() {
 
       pitchShiftRef.current = pitchShift
       playerRef.current = player
+      setLoadedTrackId(trackId)
     } catch (err) {
       console.error('Audio load error:', err)
     } finally {
@@ -248,10 +250,15 @@ export function useAudioEngine() {
     }
   }, [])
 
+  const loadStems = useCallback(() => {}, [])
+  const setStemVolume = useCallback(() => {}, [])
+
   return {
     isLoading, peaks, duration, playing, currentTime,
     speed, pitch, loopEnabled, loopA, loopB,
+    loadedTrackId,
     loadTrack, play, pause, seek,
     setSpeed, setPitch, setLoopPoints, setLoopEnabled,
+    loadStems, setStemVolume,
   }
 }
