@@ -138,7 +138,8 @@ export function useAudioEngine() {
       const toneBuffer = new Tone.ToneAudioBuffer(webAudioBuffer)
       // masterGain lets us mute the full mix when stems are active
       const masterGain = new Tone.Volume(0).toDestination()
-      const pitchShift = new Tone.PitchShift(0).connect(masterGain)
+      const pitchShift = new Tone.PitchShift().connect(masterGain)
+      pitchShift.pitch.value = 0
       pitchShift.wet.value = 1
       const player = new Tone.Player(toneBuffer).connect(pitchShift)
       player.playbackRate = 1
@@ -223,7 +224,7 @@ export function useAudioEngine() {
     setSpeedState(newSpeed)
     if (playerRef.current) playerRef.current.playbackRate = newSpeed
     if (pitchShiftRef.current) {
-      pitchShiftRef.current.pitch = pitchValueRef.current - 12 * Math.log2(newSpeed)
+      pitchShiftRef.current.pitch.value = pitchValueRef.current - 12 * Math.log2(newSpeed)
     }
     stemPlayersRef.current.forEach(({ player }) => {
       player.playbackRate = newSpeed
@@ -235,7 +236,8 @@ export function useAudioEngine() {
     pitchValueRef.current = semitones
     setPitchState(semitones)
     if (pitchShiftRef.current) {
-      pitchShiftRef.current.pitch = semitones - 12 * Math.log2(speedRef.current)
+      // PitchShift.pitch is a Tone.Signal — must use .value to update it
+      pitchShiftRef.current.pitch.value = semitones - 12 * Math.log2(speedRef.current)
     }
   }, [])
 
