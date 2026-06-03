@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Share2, Trash2, History, Upload, FolderInput, Share, BarChart2, Mic, Plus, MoreVertical, Music2, Camera, ChevronLeft } from 'lucide-react'
+import { Share2, Trash2, History, Upload, FolderInput, Share, Mic, Plus, MoreHorizontal, Music2, Camera, ChevronLeft, Play, Lock, Clock } from 'lucide-react'
 import api from '../../api/client'
 import { usePlayer } from '../../hooks/usePlayer'
 import MoveTrackModal from './MoveTrackModal'
@@ -96,11 +96,8 @@ function TrackMenu({ track, onShare, onNewVersion, onMove, onClose }) {
 
 function TrackRow({ track, allTracks, isActive, isPlaying, onShare, onNewVersion, onMove, index }) {
   const { play } = usePlayer()
-  const [showHistory, setShowHistory] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
-  const current = track.versions?.[track.versions.length - 1]
 
-  // Close menu on outside click
   const menuBtnRef = useRef(null)
   const handleGlobalClick = (e) => {
     if (menuBtnRef.current && !menuBtnRef.current.contains(e.target)) {
@@ -112,126 +109,61 @@ function TrackRow({ track, allTracks, isActive, isPlaying, onShare, onNewVersion
   function openMenu(e) {
     e.stopPropagation()
     setMenuOpen(v => !v)
-    if (!menuOpen) {
-      setTimeout(() => document.addEventListener('click', handleGlobalClick), 0)
-    }
+    if (!menuOpen) setTimeout(() => document.addEventListener('click', handleGlobalClick), 0)
   }
 
   return (
-    <div>
-      <div
-        onClick={() => play(track, allTracks)}
-        style={{
-          display: 'flex', alignItems: 'center', gap: 12,
-          padding: '10px 16px', borderRadius: 'var(--radius-md)',
-          cursor: 'pointer', position: 'relative',
-          background: isActive ? 'var(--accent-subtle)' : 'transparent',
-          transition: `background var(--dur-hover) var(--ease)`,
-        }}
-        onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'var(--bg-tertiary)' }}
-        onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent' }}
-      >
-        {/* Active bar */}
-        {isActive && (
-          <div style={{ position: 'absolute', left: 0, top: 8, bottom: 8, width: 2, background: 'var(--accent)', borderRadius: 2 }} />
-        )}
+    <div
+      onClick={() => play(track, allTracks)}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 14,
+        padding: '12px 20px', cursor: 'pointer', position: 'relative',
+        transition: `background var(--dur-hover) var(--ease)`,
+      }}
+      onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-secondary)' }}
+      onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+    >
+      {/* Index or equalizer */}
+      <div style={{ width: 22, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {isActive && isPlaying
+          ? <Equalizer />
+          : <span style={{ fontSize: 14, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{index + 1}</span>
+        }
+      </div>
 
-        {/* Index or equalizer */}
-        <div style={{ width: 18, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          {isActive && isPlaying ? (
-            <Equalizer />
-          ) : (
-            <span className="mv-mono" style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', lineHeight: 1 }}>
-              {index + 1}
-            </span>
-          )}
+      {/* Title + date */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontSize: 16, fontWeight: 600,
+          color: isActive ? 'var(--accent)' : 'var(--text-primary)',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {track.name}
         </div>
-
-        {/* Title + meta */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span className="mv-ui" style={{
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              fontWeight: isActive ? 500 : 400,
-            }}>
-              {track.name}
-            </span>
-          </div>
-          {current && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
-              <span className="mv-meta" style={{ fontSize: 'var(--text-xs)' }}>v{current.version_number}</span>
-              <span style={{ color: 'var(--text-muted)' }}>·</span>
-              <span className="mv-meta" style={{ fontSize: 'var(--text-xs)' }}>{formatSize(current.file_size)}</span>
-              {track.bpm && <><span style={{ color: 'var(--text-muted)' }}>·</span><span className="mv-meta" style={{ fontSize: 'var(--text-xs)' }}>{track.bpm} BPM</span></>}
-              {track.key_signature && <><span style={{ color: 'var(--text-muted)' }}>·</span><span className="mv-meta" style={{ fontSize: 'var(--text-xs)' }}>{track.key_signature}</span></>}
-              {track.versions?.length > 1 && (
-                <>
-                  <span style={{ color: 'var(--text-muted)' }}>·</span>
-                  <button onClick={e => { e.stopPropagation(); setShowHistory(!showHistory) }}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 3, color: 'var(--text-muted)', fontSize: 'var(--text-xs)', fontFamily: 'var(--font-ui)' }}>
-                    <History size={10} strokeWidth={1.5} />
-                    {track.versions.length}v
-                  </button>
-                </>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Duration */}
-        <span className="mv-mono" style={{ fontSize: 'var(--text-xs)', flexShrink: 0 }}>
-          {current?.duration ? fmt(current.duration) : ''}
-        </span>
-
-        {/* Date */}
-        <span className="mv-meta" style={{ fontSize: 'var(--text-xs)', width: 52, textAlign: 'right', flexShrink: 0 }}>
-          {formatDate(track.created_at)}
-        </span>
-
-        {/* 3-dots menu button */}
-        <div ref={menuBtnRef} style={{ position: 'relative', flexShrink: 0 }}>
-          <button
-            onClick={openMenu}
-            style={{
-              width: 28, height: 28, borderRadius: 'var(--radius-sm)', border: 'none',
-              background: menuOpen ? 'var(--bg-elevated)' : 'transparent',
-              color: 'var(--text-muted)', cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}
-            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-elevated)'}
-            onMouseLeave={e => { if (!menuOpen) e.currentTarget.style.background = 'transparent' }}
-          >
-            <MoreVertical size={14} strokeWidth={1.5} />
-          </button>
-          {menuOpen && (
-            <TrackMenu
-              track={track}
-              onShare={onShare}
-              onNewVersion={onNewVersion}
-              onMove={onMove}
-              onClose={() => setMenuOpen(false)}
-            />
-          )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 3 }}>
+          <Clock size={11} strokeWidth={1.5} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+          <span style={{ fontSize: 13, color: 'var(--text-muted)', fontFamily: 'var(--font-ui)' }}>
+            {formatDate(track.created_at)}
+            {track.bpm ? ` · ${track.bpm} BPM` : ''}
+            {track.key_signature ? ` · ${track.key_signature}` : ''}
+          </span>
         </div>
       </div>
 
-      {showHistory && (
-        <div style={{ margin: '0 16px 8px 46px', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-          {[...track.versions].reverse().map((v) => (
-            <div key={v.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderBottom: '1px solid var(--border)' }}>
-              <button
-                onClick={e => { e.stopPropagation(); play({ ...track, _playVersion: v.version_number }, allTracks) }}
-                style={{ width: 22, height: 22, borderRadius: '50%', background: 'var(--bg-tertiary)', border: '1px solid var(--border)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <div style={{ width: 0, height: 0, borderTop: '4px solid transparent', borderBottom: '4px solid transparent', borderLeft: '7px solid var(--text-primary)', marginLeft: 1 }} />
-              </button>
-              <span className="mv-mono" style={{ fontSize: 'var(--text-xs)' }}>v{v.version_number}</span>
-              {v.note && <span className="mv-meta" style={{ fontSize: 'var(--text-xs)' }}>— {v.note}</span>}
-              <div style={{ flex: 1 }} />
-              <span className="mv-meta" style={{ fontSize: 'var(--text-xs)' }}>{new Date(v.created_at).toLocaleDateString()}</span>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* 3-dots menu */}
+      <div ref={menuBtnRef} style={{ position: 'relative', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+        <button onClick={openMenu} style={{
+          width: 32, height: 32, borderRadius: 8, border: 'none',
+          background: menuOpen ? 'var(--bg-elevated)' : 'transparent',
+          color: 'var(--text-muted)', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <MoreHorizontal size={18} strokeWidth={1.5} />
+        </button>
+        {menuOpen && (
+          <TrackMenu track={track} onShare={onShare} onNewVersion={onNewVersion} onMove={onMove} onClose={() => setMenuOpen(false)} />
+        )}
+      </div>
     </div>
   )
 }
@@ -273,13 +205,25 @@ function NewVersionModal({ track, onClose }) {
   )
 }
 
+function fmtTotal(secs) {
+  if (!secs) return ''
+  const m = Math.floor(secs / 60)
+  const s = Math.floor(secs % 60)
+  if (m >= 60) {
+    const h = Math.floor(m / 60)
+    return `${h}h ${m % 60}m`
+  }
+  return `${m}m ${s}s`
+}
+
 export default function TrackList({ projectId, folderId, project, onShare, onShareProject, onRecord, onAnalytics }) {
-  const { currentTrack } = usePlayer()
+  const { currentTrack, play } = usePlayer()
   const qc = useQueryClient()
   const navigate = useNavigate()
   const [newVersionTrack, setNewVersionTrack] = useState(null)
   const [moveTrack, setMoveTrack] = useState(null)
   const coverInputRef = useRef()
+  const uploadZoneRef = useRef()
 
   const { data: tracks = [] } = useQuery({
     queryKey: ['tracks', projectId, folderId],
@@ -287,9 +231,10 @@ export default function TrackList({ projectId, folderId, project, onShare, onSha
     enabled: !!projectId,
   })
 
-  const updatedDate = tracks.length > 0
-    ? formatDate(tracks.reduce((a, b) => new Date(a.updated_at || a.created_at) > new Date(b.updated_at || b.created_at) ? a : b).updated_at || tracks[0].created_at)
-    : null
+  const totalSeconds = tracks.reduce((sum, t) => {
+    const v = t.versions?.[t.versions.length - 1]
+    return sum + (v?.duration || 0)
+  }, 0)
 
   function handleCoverUpload(e) {
     const file = e.target.files[0]
@@ -314,134 +259,130 @@ export default function TrackList({ projectId, folderId, project, onShare, onSha
   ]
   const grad = project ? gradients[project.id % gradients.length] : 'var(--bg-tertiary)'
 
+  const coverBtn = (onClick, title, children) => (
+    <button onClick={onClick} title={title} style={{
+      width: 38, height: 38, borderRadius: 10, border: 'none',
+      background: 'rgba(0,0,0,0.45)', color: '#fff', cursor: 'pointer',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      backdropFilter: 'blur(8px)',
+    }}>{children}</button>
+  )
+
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      {/* Sticky project header */}
+
+      {/* ── Project header ── */}
       {project && (
-        <div style={{
-          flexShrink: 0, background: 'var(--bg-primary)',
-          borderBottom: '1px solid var(--border)',
-        }}>
-          {/* Cover art section */}
-          <div style={{
-            width: '100%', height: 180,
-            background: project.cover_image ? undefined : grad,
-            position: 'relative', overflow: 'hidden',
-            display: 'flex', alignItems: 'flex-end',
-          }}>
-            {project.cover_image && (
-              <img src={project.cover_image} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
-            )}
-            {/* Gradient overlay */}
-            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.7) 0%, transparent 60%)' }} />
+        <div style={{ flexShrink: 0, overflowY: 'auto' }}>
 
-            {/* Back button */}
-            <button
-              onClick={() => navigate('/')}
-              title="Volver"
-              style={{
-                position: 'absolute', top: 12, left: 12,
-                width: 32, height: 32, borderRadius: '50%',
-                border: '1px solid rgba(255,255,255,0.25)',
-                background: 'rgba(0,0,0,0.45)',
-                color: '#fff', cursor: 'pointer',
+          {/* Square cover art */}
+          <div style={{ padding: '16px 20px 0', position: 'relative' }}>
+            <div style={{
+              width: '100%', aspectRatio: '1', borderRadius: 20, overflow: 'hidden',
+              background: project.cover_image ? undefined : grad,
+              position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              {project.cover_image
+                ? <img src={project.cover_image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                : <Music2 size={64} strokeWidth={1} style={{ color: 'rgba(255,255,255,0.4)' }} />
+              }
+
+              {/* Back — top left */}
+              <button onClick={() => navigate('/')} style={{
+                position: 'absolute', top: 14, left: 14,
+                width: 38, height: 38, borderRadius: 10, border: 'none',
+                background: 'rgba(0,0,0,0.45)', color: '#fff', cursor: 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                backdropFilter: 'blur(4px)',
-              }}
-            >
-              <ChevronLeft size={18} strokeWidth={2} />
-            </button>
-
-            {/* Project info over image */}
-            <div style={{ position: 'relative', padding: '0 28px 16px', flex: 1, minWidth: 0 }}>
-              <h1 className="mv-h1" style={{ color: '#fff', marginBottom: 4, fontSize: 'var(--text-xl)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {project.name}
-              </h1>
-              <span style={{ fontSize: 'var(--text-xs)', color: 'rgba(255,255,255,0.7)', fontFamily: 'var(--font-ui)' }}>
-                {tracks.length} track{tracks.length !== 1 ? 's' : ''}
-                {updatedDate ? ` · ${updatedDate}` : ''}
-              </span>
-            </div>
-
-            {/* Action buttons */}
-            <div style={{ position: 'relative', padding: '0 16px 16px', display: 'flex', gap: 6, flexShrink: 0 }}>
-              {/* Upload cover */}
-              <input ref={coverInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleCoverUpload} />
-              <button
-                onClick={() => coverInputRef.current?.click()}
-                title="Cambiar portada"
-                style={{ width: 32, height: 32, borderRadius: 'var(--radius-md)', border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(0,0,0,0.4)', color: 'rgba(255,255,255,0.8)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
-                <Camera size={13} strokeWidth={1.5} />
+                backdropFilter: 'blur(8px)',
+              }}>
+                <ChevronLeft size={20} strokeWidth={2} />
               </button>
-              {onRecord && (
-                <button onClick={onRecord} title="Grabar" style={{ width: 32, height: 32, borderRadius: 'var(--radius-md)', border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(0,0,0,0.4)', color: 'rgba(255,255,255,0.8)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
-                  <Mic size={13} strokeWidth={1.5} />
-                </button>
-              )}
-              {onShareProject && (
-                <button onClick={onShareProject} title="Compartir proyecto" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 12px', height: 32, borderRadius: 'var(--radius-md)', border: '1px solid rgba(255,255,255,0.2)', background: 'rgba(0,0,0,0.4)', color: 'rgba(255,255,255,0.8)', cursor: 'pointer', fontFamily: 'var(--font-ui)', fontSize: 'var(--text-xs)', fontWeight: 500, backdropFilter: 'blur(4px)' }}>
-                  <Share size={12} strokeWidth={1.5} />
-                  Compartir
-                </button>
-              )}
+
+              {/* Action buttons — top right */}
+              <div style={{ position: 'absolute', top: 14, right: 14, display: 'flex', gap: 8 }}>
+                <input ref={coverInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleCoverUpload} />
+                {coverBtn(() => coverInputRef.current?.click(), 'Cambiar portada', <Camera size={15} strokeWidth={1.5} />)}
+                {onShareProject && coverBtn(onShareProject, 'Compartir', <Share size={15} strokeWidth={1.5} />)}
+                {onRecord && coverBtn(onRecord, 'Grabar', <Mic size={15} strokeWidth={1.5} />)}
+              </div>
             </div>
           </div>
+
+          {/* Project name + play button */}
+          <div style={{ padding: '16px 20px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+              {project.name}
+            </h1>
+            <button
+              onClick={() => tracks.length > 0 && play(tracks[0], tracks)}
+              style={{
+                width: 56, height: 56, borderRadius: 16, border: 'none',
+                background: 'var(--text-primary)', color: 'var(--bg-primary)',
+                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+              }}
+            >
+              <Play size={22} fill="currentColor" strokeWidth={0} style={{ marginLeft: 3 }} />
+            </button>
+          </div>
+
+          {/* Meta row */}
+          <div style={{ padding: '8px 20px 0', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Lock size={12} strokeWidth={2} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+            <span style={{ fontSize: 13, color: 'var(--text-muted)', fontFamily: 'var(--font-ui)' }}>
+              {tracks.length} track{tracks.length !== 1 ? 's' : ''}
+              {totalSeconds > 0 ? ` · ${fmtTotal(totalSeconds)}` : ''}
+            </span>
+          </div>
+
+          {/* Add tracks button */}
+          <div style={{ padding: '12px 20px 16px' }}>
+            <button
+              onClick={() => uploadZoneRef.current?.openDialog()}
+              style={{
+                width: '100%', padding: '14px 0', borderRadius: 14,
+                background: 'var(--bg-secondary)', border: 'none', cursor: 'pointer',
+                fontSize: 16, fontWeight: 500, fontFamily: 'var(--font-ui)',
+                color: 'var(--text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              }}
+            >
+              <Plus size={16} strokeWidth={2.5} />
+              Add tracks
+            </button>
+          </div>
+
+          {/* Upload progress (compact — no visible drop zone, just progress items) */}
+          <UploadZone ref={uploadZoneRef} projectId={projectId} folderId={folderId} compact />
+
+          <div style={{ height: 1, background: 'var(--border)', margin: '0 20px' }} />
         </div>
       )}
 
-      {/* Upload zone */}
-      <UploadZone projectId={projectId} folderId={folderId} />
-
-      {/* Tracks list */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '8px 8px 24px' }}>
-        {tracks.length === 0 ? (
+      {/* ── Track list ── */}
+      <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 24 }}>
+        {tracks.length === 0 && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 120 }}>
-            <span className="mv-meta" style={{ color: 'var(--text-muted)' }}>Sin canciones — arrastra archivos arriba</span>
+            <span style={{ fontSize: 14, color: 'var(--text-muted)', fontFamily: 'var(--font-ui)' }}>
+              No hay canciones todavía
+            </span>
           </div>
-        ) : (
-          tracks.map((t, i) => (
-            <TrackRow
-              key={t.id}
-              track={t}
-              allTracks={tracks}
-              isActive={currentTrack?.id === t.id}
-              isPlaying={currentTrack?.id === t.id}
-              onShare={onShare}
-              onNewVersion={setNewVersionTrack}
-              onMove={setMoveTrack}
-              index={i}
-            />
-          ))
         )}
-
-        {/* Ghost add row */}
-        <label
-          style={{
-            display: 'flex', alignItems: 'center', gap: 10,
-            padding: '8px 16px', borderRadius: 'var(--radius-md)',
-            cursor: 'pointer', marginTop: 4,
-          }}
-          onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-tertiary)' }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
-        >
-          <input type="file" accept="audio/*" multiple style={{ display: 'none' }}
-            onChange={e => {
-              // handled by UploadZone but this is a secondary trigger
-            }}
+        {tracks.map((t, i) => (
+          <TrackRow
+            key={t.id}
+            track={t}
+            allTracks={tracks}
+            isActive={currentTrack?.id === t.id}
+            isPlaying={currentTrack?.id === t.id}
+            onShare={onShare}
+            onNewVersion={setNewVersionTrack}
+            onMove={setMoveTrack}
+            index={i}
           />
-          <Plus size={14} strokeWidth={1.5} style={{ color: 'var(--text-muted)' }} />
-          <span style={{ fontSize: 'var(--text-sm)', fontFamily: 'var(--font-ui)', color: 'var(--text-muted)' }}>
-            Añadir canciones
-          </span>
-        </label>
+        ))}
       </div>
 
-      {newVersionTrack && (
-        <NewVersionModal track={newVersionTrack} onClose={() => setNewVersionTrack(null)} />
-      )}
-      {moveTrack && (
-        <MoveTrackModal track={moveTrack} onClose={() => setMoveTrack(null)} />
-      )}
+      {newVersionTrack && <NewVersionModal track={newVersionTrack} onClose={() => setNewVersionTrack(null)} />}
+      {moveTrack && <MoveTrackModal track={moveTrack} onClose={() => setMoveTrack(null)} />}
     </div>
   )
 }
