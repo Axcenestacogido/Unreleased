@@ -60,14 +60,30 @@ if (-not (Test-Path ".env")) {
     $bytes  = New-Object byte[] 32
     [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
     $secret = -join ($bytes | ForEach-Object { $_.ToString("x2") })
+
+    Write-Host ""
+    Write-Host "  Tailscale auth key (optional — press Enter to skip):" -ForegroundColor Cyan
+    Write-Host "  Get one at: https://login.tailscale.com/admin/settings/keys" -ForegroundColor DarkGray
+    $tsKey = Read-Host "  TS_AUTHKEY"
+
     @"
 SECRET_KEY=$secret
 PORT=$Port
 ACCESS_TOKEN_EXPIRE_MINUTES=10080
+TS_AUTHKEY=$tsKey
 "@ | Set-Content ".env" -Encoding UTF8
     Write-Host "        .env created."
 } else {
     Write-Host "  [2/4] Using existing .env"
+    # Add TS_AUTHKEY if missing
+    $envContent = Get-Content ".env" -Raw
+    if ($envContent -notmatch "TS_AUTHKEY") {
+        Write-Host ""
+        Write-Host "  Tailscale auth key (optional — press Enter to skip):" -ForegroundColor Cyan
+        Write-Host "  Get one at: https://login.tailscale.com/admin/settings/keys" -ForegroundColor DarkGray
+        $tsKey = Read-Host "  TS_AUTHKEY"
+        Add-Content ".env" "`nTS_AUTHKEY=$tsKey"
+    }
 }
 
 # Build (--no-cache ensures fresh build when source files change)
@@ -81,10 +97,21 @@ docker compose up -d
 Write-Host ""
 Write-Host "  OK  MusicVault running at  http://localhost:$Port" -ForegroundColor Green
 Write-Host ""
-Write-Host "  First run: open the URL in your browser and create an account."
+$envContent = Get-Content ".env" -Raw
+if ($envContent -match "TS_AUTHKEY=ts") {
+    Write-Host "  Tailscale: connecting… check logs with:" -ForegroundColor Cyan
+    Write-Host "    docker compose logs tailscale" -ForegroundColor DarkGray
+    Write-Host "  Once connected, access via  https://musicvault  on any Tailscale device." -ForegroundColor Cyan
+} else {
+    Write-Host "  Tailscale not configured. To add it later, edit .env and add TS_AUTHKEY=<key>" -ForegroundColor DarkGray
+    Write-Host "  Then run: docker compose logs tailscale  — and follow the auth URL in the logs."
+}
 Write-Host ""
-Write-Host "  Useful commands (cd into $InstDir first):"
-Write-Host "    docker compose logs -f    # view logs"
-Write-Host "    docker compose down       # stop"
-Write-Host "    docker compose up -d      # restart"
+Write-Host "  First run: create an account at http://localhost:$Port"
+Write-Host ""
+Write-Host "  Useful commands (run from $InstDir):"
+Write-Host "    docker compose logs -f          # view all logs"
+Write-Host "    docker compose logs tailscale   # Tailscale status"
+Write-Host "    docker compose down             # stop"
+Write-Host "    docker compose up -d            # restart"
 Write-Host ""
