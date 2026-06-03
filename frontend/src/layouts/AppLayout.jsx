@@ -27,10 +27,10 @@ export default function AppLayout() {
       <SSEProvider>
         <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg-primary)' }}>
           {!isMobile && <Sidebar />}
-          <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', paddingBottom: isMobile ? 64 : 0 }}>
             <Outlet />
           </div>
-          {!isMobile && <Player />}
+          <Player isMobile={isMobile} />
         </div>
       </SSEProvider>
     </PlayerProvider>
