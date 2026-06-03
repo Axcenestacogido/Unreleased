@@ -44,8 +44,12 @@ export function useSSE() {
 
       case 'track_added':
       case 'track_version_added':
-        // Invalidate tracks for this project so the list refreshes
         qc.invalidateQueries({ queryKey: ['tracks', String(event.project_id)] })
+        break
+
+      case 'stems_ready':
+      case 'stems_error':
+        qc.invalidateQueries({ queryKey: ['stems', event.track_id] })
         break
     }
   }

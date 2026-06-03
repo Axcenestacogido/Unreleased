@@ -8,6 +8,7 @@ services:
       - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-10080}
     volumes:
       - musicvault_data:/data
+      - demucs_models:/root/.cache
     networks:
       - app
 
@@ -51,6 +52,7 @@ services:
 volumes:
   musicvault_data:
   tailscale_data:
+  demucs_models:
 
 networks:
   app:

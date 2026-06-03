@@ -2,9 +2,10 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import {
   Play, Pause, SkipBack, SkipForward,
   Repeat, Disc3, Music2, X, ChevronDown,
-  Plus, Trash2, Loader2, Zap,
+  Plus, Trash2, Loader2, Zap, Scissors,
+  FileText, SlidersHorizontal,
 } from 'lucide-react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { usePlayer } from '../../hooks/usePlayer'
 import { useAudioEngine } from '../../hooks/useAudioEngine'
 import api from '../../api/client'
@@ -78,24 +79,35 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
   const [bpm, setBpm] = useState('')
   const [key, setKey] = useState('')
   const [lyrics, setLyrics] = useState('')
-  const [stems, setStems] = useState([])
   const [analyzing, setAnalyzing] = useState(false)
+  const [separating, setSeparating] = useState(false)
   const saveTimeout = useRef(null)
   const stemInputRef = useRef(null)
+  const wasPlayingRef = useRef(false)
+
+  // Fetch stems via query so SSE invalidation triggers a refresh
+  const { data: stems = [] } = useQuery({
+    queryKey: ['stems', currentTrack?.id],
+    queryFn: () => api.get(`/tracks/${currentTrack.id}/stems`).then(r => r.data),
+    enabled: !!currentTrack,
+    onSuccess: (data) => {
+      if (data.length > 0 && separating) setSeparating(false)
+    },
+  })
 
   useEffect(() => {
     if (!currentTrack) return
     setBpm(currentTrack.bpm != null ? String(currentTrack.bpm) : '')
     setKey(currentTrack.key_signature || '')
     setLyrics(currentTrack.lyrics || '')
-    setStems(currentTrack.stems || [])
+    setSeparating(false)
   }, [currentTrack?.id])
 
-  // Load stems into audio engine when track or stems change
+  // Sync stems to audio engine whenever they change
   useEffect(() => {
-    if (!currentTrack || !stems.length) return
+    if (!currentTrack) return
     engine.loadStems(stems)
-  }, [currentTrack?.id, stems.length])
+  }, [currentTrack?.id, stems])
 
   function scheduleSave(patch) {
     clearTimeout(saveTimeout.current)
@@ -123,6 +135,16 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
 
   function handleSeek(t) {
     if (t !== null && t !== undefined) engine.seek(t)
+  }
+
+  function handleScrubStart() {
+    wasPlayingRef.current = engine.playing
+    if (engine.playing) engine.pause()
+  }
+
+  function handleScrubEnd(t) {
+    engine.seek(t)
+    if (wasPlayingRef.current) engine.play()
   }
 
   function handleLoopAClick() {
@@ -179,6 +201,16 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
     }
   }
 
+  async function handleSeparate() {
+    setSeparating(true)
+    try {
+      await api.post(`/tracks/${currentTrack.id}/separate`)
+    } catch (e) {
+      setSeparating(false)
+      console.error('Separation failed:', e)
+    }
+  }
+
   async function handleStemUpload(e) {
     const file = e.target.files?.[0]
     if (!file) return
@@ -186,10 +218,8 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
     fd.append('file', file)
     fd.append('name', file.name.replace(/\.[^.]+$/, ''))
     try {
-      const res = await api.post(`/tracks/${currentTrack.id}/stems`, fd)
-      const newStem = res.data
-      setStems(prev => [...prev, newStem])
-      engine.loadStems([...stems, newStem])
+      await api.post(`/tracks/${currentTrack.id}/stems`, fd)
+      qc.invalidateQueries({ queryKey: ['stems', currentTrack.id] })
     } catch (e) {
       console.error('Stem upload failed:', e)
     }
@@ -198,7 +228,6 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
 
   async function handleStemVolumeChange(stem, volume) {
     engine.setStemVolume(stem.id, volume)
-    setStems(prev => prev.map(s => s.id === stem.id ? { ...s, volume } : s))
     try {
       await api.patch(`/stems/${stem.id}`, { volume })
     } catch {}
@@ -207,9 +236,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
   async function handleDeleteStem(stemId) {
     try {
       await api.delete(`/stems/${stemId}`)
-      const next = stems.filter(s => s.id !== stemId)
-      setStems(next)
-      engine.loadStems(next)
+      qc.invalidateQueries({ queryKey: ['stems', currentTrack.id] })
     } catch {}
   }
 
@@ -269,11 +296,11 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
               currentTime={engine.currentTime}
               duration={engine.duration}
               onSeek={handleSeek}
+              onScrubStart={handleScrubStart}
+              onScrubEnd={handleScrubEnd}
               loopA={loopA ?? 0}
               loopB={loopB ?? engine.duration}
               loopEnabled={loopActive}
-              clickMode="seek"
-              onClickDone={() => {}}
             />
           )}
         </div>
@@ -394,21 +421,39 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
 
             {/* Stems */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span className="mv-label">STEMS</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span className="mv-label" style={{ flex: 1 }}>STEMS</span>
+                <button onClick={handleSeparate} disabled={separating} title="Auto-separate stems with AI" style={{
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  padding: '3px 8px', borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--border)', background: 'transparent',
+                  color: 'var(--text-secondary)', fontSize: 'var(--text-xs)',
+                  cursor: separating ? 'wait' : 'pointer',
+                }}>
+                  {separating
+                    ? <Loader2 size={11} strokeWidth={2} style={{ animation: 'spin 0.8s linear infinite' }} />
+                    : <Scissors size={11} strokeWidth={2} />}
+                  {separating ? 'Separating…' : 'Auto'}
+                </button>
                 <button onClick={() => stemInputRef.current?.click()} style={{
                   display: 'flex', alignItems: 'center', gap: 4,
                   padding: '3px 8px', borderRadius: 'var(--radius-sm)',
                   border: '1px solid var(--border)', background: 'transparent',
                   color: 'var(--text-secondary)', fontSize: 'var(--text-xs)', cursor: 'pointer',
                 }}>
-                  <Plus size={11} strokeWidth={2} /> Add
+                  <Plus size={11} strokeWidth={2} /> Manual
                 </button>
                 <input ref={stemInputRef} type="file" accept="audio/*" style={{ display: 'none' }} onChange={handleStemUpload} />
               </div>
 
-              {stems.length === 0 && (
-                <span className="mv-meta" style={{ fontSize: 'var(--text-xs)' }}>No stems yet. Upload individual tracks to mix them.</span>
+              {separating && (
+                <span className="mv-meta" style={{ fontSize: 'var(--text-xs)' }}>
+                  AI separating vocals / drums / bass / other… this can take several minutes.
+                </span>
+              )}
+
+              {!separating && stems.length === 0 && (
+                <span className="mv-meta" style={{ fontSize: 'var(--text-xs)' }}>No stems. Use Auto to separate with AI, or Manual to upload.</span>
               )}
 
               {stems.map(stem => (
@@ -452,30 +497,190 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
     </div>
   )
 
-  // Mobile: full-screen overlay
+  // ── Mobile full-screen player ───────────────────────────────────────────────
   if (isMobile) {
+    const cover = currentTrack.project_cover_image
+    const [mobileTab, setMobileTab] = useState(null) // null | 'notes' | 'edit'
+
+    const toggleTab = (tab) => setMobileTab(prev => prev === tab ? null : tab)
+
+    const btnStyle = (active) => ({
+      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+      background: 'transparent', border: 'none', cursor: 'pointer',
+      color: active ? 'var(--text-primary)' : 'var(--text-muted)',
+      padding: '8px 24px',
+    })
+
     return (
       <div style={{
         position: 'fixed', inset: 0, zIndex: 200,
-        background: 'var(--bg-secondary)', display: 'flex', flexDirection: 'column',
+        background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column',
         overflow: 'hidden',
       }}>
-        {/* Mobile header */}
-        <div style={{
-          display: 'flex', alignItems: 'center', padding: '12px 16px',
-          borderBottom: '1px solid var(--border)', flexShrink: 0,
-        }}>
-          <button onClick={onClose} style={{
-            background: 'transparent', border: 'none', cursor: 'pointer',
-            color: 'var(--text-secondary)', lineHeight: 0, padding: 4, marginRight: 8,
-          }}>
-            <ChevronDown size={22} strokeWidth={1.5} />
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', padding: '16px 20px 8px', flexShrink: 0 }}>
+          <button onClick={onClose} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', lineHeight: 0, padding: 4 }}>
+            <ChevronDown size={24} strokeWidth={1.5} />
           </button>
-          <span style={{ flex: 1, fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {currentTrack?.name}
+          <div style={{ flex: 1, textAlign: 'center' }}>
+            <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {currentTrack.name}
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 2 }}>
+              {currentTrack.project_name || ''}
+              {bpm ? ` · ${bpm} BPM` : ''}
+              {key ? ` · ${key}` : ''}
+            </div>
+          </div>
+          <div style={{ width: 32 }} />
+        </div>
+
+        {/* Main content: cover OR tab panel */}
+        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 24px' }}>
+          {mobileTab === null && (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+              <div style={{
+                width: '75vw', height: '75vw', maxWidth: 320, maxHeight: 320,
+                borderRadius: '50%', overflow: 'hidden', background: 'var(--bg-elevated)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
+              }}>
+                {cover
+                  ? <img src={cover} alt="cover" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  : <Music2 size={64} strokeWidth={1} style={{ color: 'var(--text-muted)' }} />}
+              </div>
+            </div>
+          )}
+
+          {mobileTab === 'notes' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, height: '100%' }}>
+              <textarea
+                placeholder="Paste or write lyrics here…"
+                value={lyrics}
+                onChange={e => { setLyrics(e.target.value); if (currentTrack) scheduleSave({ lyrics: e.target.value || null }) }}
+                style={{
+                  flex: 1, minHeight: 160, background: 'var(--bg-tertiary)',
+                  border: '1px solid var(--border)', borderRadius: 12,
+                  padding: '12px 14px', fontSize: 15, color: 'var(--text-primary)',
+                  outline: 'none', resize: 'none', lineHeight: 1.6,
+                  fontFamily: 'var(--font-ui)',
+                }}
+              />
+            </div>
+          )}
+
+          {mobileTab === 'edit' && (
+            <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
+              {/* Pitch */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span className="mv-label">PITCH</span>
+                  <span className="mv-mono" style={{ fontSize: 'var(--text-xs)' }}>{engine.pitch > 0 ? '+' : ''}{engine.pitch}st</span>
+                </div>
+                <Slider value={engine.pitch} min={-12} max={12} step={1} onChange={v => engine.setPitch(Math.round(v))} onReset={() => engine.setPitch(0)} />
+              </div>
+              {/* Speed */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span className="mv-label">SPEED</span>
+                  <span className="mv-mono" style={{ fontSize: 'var(--text-xs)' }}>{engine.speed.toFixed(2)}x</span>
+                </div>
+                <Slider value={engine.speed} min={0.5} max={2} step={0.05} onChange={engine.setSpeed} onReset={() => engine.setSpeed(1)} />
+              </div>
+              <div style={{ height: 1, background: 'var(--border)' }} />
+              {/* BPM + Key + Analyze */}
+              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <span className="mv-label">BPM</span>
+                  <input type="number" min="1" max="999" placeholder="—" value={bpm}
+                    onChange={e => { setBpm(e.target.value); scheduleSave({ bpm: e.target.value ? parseInt(e.target.value) : null }) }}
+                    style={{ width: '100%', background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', fontSize: 15, color: 'var(--text-primary)', outline: 'none' }} />
+                </div>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <span className="mv-label">KEY</span>
+                  <input type="text" placeholder="C major…" value={key}
+                    onChange={e => { setKey(e.target.value); scheduleSave({ key_signature: e.target.value || null }) }}
+                    style={{ width: '100%', background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', fontSize: 15, color: 'var(--text-primary)', outline: 'none' }} />
+                </div>
+                <button onClick={handleAnalyze} disabled={analyzing} style={{ height: 38, padding: '0 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', cursor: analyzing ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                  {analyzing ? <Loader2 size={14} strokeWidth={1.5} style={{ animation: 'spin 0.8s linear infinite' }} /> : <Zap size={14} strokeWidth={1.5} />}
+                </button>
+              </div>
+              <div style={{ height: 1, background: 'var(--border)' }} />
+              {/* Stems */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span className="mv-label" style={{ flex: 1 }}>STEMS</span>
+                  <button onClick={handleSeparate} disabled={separating} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-secondary)', fontSize: 13, cursor: separating ? 'wait' : 'pointer' }}>
+                    {separating ? <Loader2 size={12} strokeWidth={2} style={{ animation: 'spin 0.8s linear infinite' }} /> : <Scissors size={12} strokeWidth={2} />}
+                    {separating ? 'Separating…' : 'Auto'}
+                  </button>
+                  <button onClick={() => stemInputRef.current?.click()} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-secondary)', fontSize: 13, cursor: 'pointer' }}>
+                    <Plus size={12} strokeWidth={2} /> Add
+                  </button>
+                  <input ref={stemInputRef} type="file" accept="audio/*" style={{ display: 'none' }} onChange={handleStemUpload} />
+                </div>
+                {separating && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>AI separating vocals / drums / bass / other… may take several minutes.</span>}
+                {!separating && stems.length === 0 && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>No stems. Tap Auto to separate with AI.</span>}
+                {stems.map(stem => (
+                  <div key={stem.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ flex: 1, fontSize: 13, color: 'var(--text-primary)' }}>{stem.name}</span>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)', minWidth: 32, textAlign: 'right' }}>{Math.round(stem.volume * 100)}%</span>
+                      <button onClick={() => handleDeleteStem(stem.id)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 0 }}>
+                        <Trash2 size={12} strokeWidth={1.5} />
+                      </button>
+                    </div>
+                    <Slider value={stem.volume} min={0} max={1} step={0.01} onChange={v => handleStemVolumeChange(stem, Math.round(v * 100) / 100)} onReset={() => handleStemVolumeChange(stem, 1)} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Waveform */}
+        <div style={{ height: 56, padding: '0 20px', flexShrink: 0 }}>
+          {engine.isLoading
+            ? <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div style={{ width: 16, height: 16, border: '2px solid var(--border-strong)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} /></div>
+            : <WaveCanvas peaks={engine.peaks} currentTime={engine.currentTime} duration={engine.duration} onSeek={handleSeek} onScrubStart={handleScrubStart} onScrubEnd={handleScrubEnd} loopA={loopA ?? 0} loopB={loopB ?? engine.duration} loopEnabled={loopActive} />}
+        </div>
+
+        {/* Time */}
+        <div style={{ textAlign: 'center', padding: '6px 0', flexShrink: 0 }}>
+          <span className="mv-mono" style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
+            {fmt(engine.currentTime)} / {fmt(engine.duration)}
           </span>
         </div>
-        {inner}
+
+        {/* Transport */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around', padding: '8px 20px', flexShrink: 0 }}>
+          <IconBtn onClick={toggleLoop} active={loopActive} size={40} title="Loop"><Repeat size={20} strokeWidth={1.5} /></IconBtn>
+          <IconBtn onClick={playPrev} size={44}><SkipBack size={22} strokeWidth={1.5} /></IconBtn>
+          <button onClick={togglePlay} style={{
+            width: 64, height: 64, borderRadius: '50%', border: 'none',
+            background: 'var(--text-primary)', color: 'var(--bg-primary)',
+            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }}>
+            {engine.playing ? <Pause size={26} strokeWidth={1.5} /> : <Play size={26} strokeWidth={1.5} style={{ marginLeft: 3 }} />}
+          </button>
+          <IconBtn onClick={playNext} size={44}><SkipForward size={22} strokeWidth={1.5} /></IconBtn>
+          <IconBtn onClick={handleLoopAClick} active={loopA !== null} size={40} title="Loop A/B">
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 600 }}>A·B</span>
+          </IconBtn>
+        </div>
+
+        {/* Bottom tab bar */}
+        <div style={{ display: 'flex', justifyContent: 'space-around', borderTop: '1px solid var(--border)', flexShrink: 0, paddingBottom: 'env(safe-area-inset-bottom, 8px)' }}>
+          <button style={btnStyle(mobileTab === 'notes')} onClick={() => toggleTab('notes')}>
+            <FileText size={22} strokeWidth={1.5} />
+            <span style={{ fontSize: 11, letterSpacing: '0.05em' }}>notes</span>
+          </button>
+          <button style={btnStyle(mobileTab === 'edit')} onClick={() => toggleTab('edit')}>
+            <SlidersHorizontal size={22} strokeWidth={1.5} />
+            <span style={{ fontSize: 11, letterSpacing: '0.05em' }}>edit</span>
+          </button>
+        </div>
       </div>
     )
   }
