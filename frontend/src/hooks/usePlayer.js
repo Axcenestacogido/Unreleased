@@ -1,10 +1,19 @@
-import { createContext, useContext, useState, useCallback } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect } from 'react'
 
 const PlayerContext = createContext(null)
 
 export function PlayerProvider({ children }) {
   const [currentTrack, setCurrentTrack] = useState(null)
   const [queue, setQueue] = useState([])
+
+  // Update mediaSession metadata for iOS lock screen controls
+  useEffect(() => {
+    if (!currentTrack || !('mediaSession' in navigator)) return
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: currentTrack.name,
+      artist: currentTrack.project_name || 'MusicVault',
+    })
+  }, [currentTrack])
 
   const play = useCallback((track, trackList = []) => {
     setCurrentTrack(track)

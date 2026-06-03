@@ -23,6 +23,7 @@ class Project(Base):
     name = Column(String, nullable=False)
     description = Column(Text, nullable=True)
     color = Column(String, nullable=True)
+    cover_image = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -49,6 +50,9 @@ class Track(Base):
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
     folder_id = Column(Integer, ForeignKey("folders.id"), nullable=True)
     name = Column(String, nullable=False)
+    bpm = Column(Integer, nullable=True)
+    key_signature = Column(String, nullable=True)
+    lyrics = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 

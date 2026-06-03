@@ -1,18 +1,24 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate, useMatch } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { House, Upload, Plus, Disc3, Folder, FolderPlus, Trash2, LogOut } from 'lucide-react'
+import { Plus, Disc3, Folder, FolderPlus, Trash2, LogOut, Sun, Moon } from 'lucide-react'
 import api from '../../api/client'
 import { useAuth } from '../../hooks/useAuth'
 import { useSSEStatus } from '../../hooks/useSSE'
 
+function useTheme() {
+  const [theme, setTheme] = useState(() => localStorage.getItem('mv-theme') || 'dark')
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem('mv-theme', theme)
+  }, [theme])
+  return [theme, setTheme]
+}
+
 function NavItem({ icon: Icon, label, active, onClick }) {
   const [hover, setHover] = useState(false)
   return (
-    <button
-      onClick={onClick}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
+    <button onClick={onClick} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
       style={{
         display: 'flex', alignItems: 'center', gap: 10, width: '100%',
         padding: '8px 10px', borderRadius: 'var(--radius-md)', border: 'none',
@@ -22,8 +28,7 @@ function NavItem({ icon: Icon, label, active, onClick }) {
         background: active || hover ? 'var(--accent-subtle)' : 'transparent',
         color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
         transition: `all var(--dur-hover) var(--ease)`,
-      }}
-    >
+      }}>
       <Icon size={16} strokeWidth={1.5} />
       <span>{label}</span>
     </button>
@@ -47,9 +52,9 @@ export default function Sidebar() {
   const { logout } = useAuth()
   const { connected } = useSSEStatus()
   const qc = useQueryClient()
-  const matchLib = useMatch('/')
   const matchProj = useMatch('/project/:id')
   const activeProjectId = matchProj?.params?.id
+  const [theme, setTheme] = useTheme()
 
   const [newProjName, setNewProjName] = useState('')
   const [showNewProj, setShowNewProj] = useState(false)
@@ -92,35 +97,41 @@ export default function Sidebar() {
   })
 
   return (
-    <aside style={{
+    <aside className="mv-sidebar" style={{
       width: 'var(--col-sidebar)', flexShrink: 0, background: 'var(--bg-secondary)',
       borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column',
       padding: '0 12px', overflowY: 'auto',
     }}>
       {/* Wordmark */}
       <div style={{ padding: '20px 10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)', fontWeight: 600, letterSpacing: 'var(--tracking-display)', color: 'var(--text-primary)' }}>
+        <span
+          onClick={() => navigate('/')}
+          style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)', fontWeight: 600, letterSpacing: 'var(--tracking-display)', color: 'var(--text-primary)', cursor: 'pointer' }}>
           MusicVault
         </span>
-        <button onClick={logout} title="Sign out" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4, borderRadius: 'var(--radius-sm)', lineHeight: 0 }}>
-          <LogOut size={14} strokeWidth={1.5} />
-        </button>
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button
+            onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
+            title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4, borderRadius: 'var(--radius-sm)', lineHeight: 0 }}>
+            {theme === 'dark' ? <Sun size={13} strokeWidth={1.5} /> : <Moon size={13} strokeWidth={1.5} />}
+          </button>
+          <button onClick={logout} title="Sign out" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4, borderRadius: 'var(--radius-sm)', lineHeight: 0 }}>
+            <LogOut size={13} strokeWidth={1.5} />
+          </button>
+        </div>
       </div>
-
-      {/* Primary nav */}
-      <nav style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <NavItem icon={House} label="Library" active={!!matchLib} onClick={() => navigate('/')} />
-        <NavItem icon={Upload} label="Upload" active={false} onClick={() => navigate(activeProjectId ? `/project/${activeProjectId}` : '/')} />
-      </nav>
 
       {/* Projects */}
       <SidebarSection label="Projects" action={
-        <button onClick={() => setShowNewProj(v => !v)} title="New project" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2, lineHeight: 0, borderRadius: 'var(--radius-sm)' }}>
+        <button onClick={() => setShowNewProj(v => !v)} title="New project"
+          style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2, lineHeight: 0, borderRadius: 'var(--radius-sm)' }}>
           <Plus size={13} strokeWidth={1.5} />
         </button>
       }>
         {showNewProj && (
-          <form onSubmit={e => { e.preventDefault(); if (newProjName.trim()) createProject.mutate(newProjName.trim()) }} style={{ padding: '0 10px', marginBottom: 6 }}>
+          <form onSubmit={e => { e.preventDefault(); if (newProjName.trim()) createProject.mutate(newProjName.trim()) }}
+            style={{ padding: '0 10px', marginBottom: 6 }}>
             <input
               autoFocus value={newProjName} onChange={e => setNewProjName(e.target.value)}
               placeholder="Project name"
@@ -133,16 +144,13 @@ export default function Sidebar() {
           {projects.map(p => (
             <div key={p.id} style={{ display: 'flex', alignItems: 'center', position: 'relative' }}
               onMouseEnter={e => { const btn = e.currentTarget.querySelector('[data-del]'); if (btn) btn.style.opacity = '1' }}
-              onMouseLeave={e => { const btn = e.currentTarget.querySelector('[data-del]'); if (btn) btn.style.opacity = '0' }}
-            >
+              onMouseLeave={e => { const btn = e.currentTarget.querySelector('[data-del]'); if (btn) btn.style.opacity = '0' }}>
               <NavItem icon={Disc3} label={p.name} active={activeProjectId === String(p.id)} onClick={() => navigate(`/project/${p.id}`)} />
               {activeProjectId === String(p.id) && (
-                <button
-                  data-del
+                <button data-del
                   onClick={() => window.confirm(`Delete "${p.name}"?`) && deleteProject.mutate(p.id)}
                   style={{ position: 'absolute', right: 4, background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4, lineHeight: 0, borderRadius: 'var(--radius-sm)', opacity: 0, transition: 'opacity 120ms' }}
-                  title="Delete project"
-                >
+                  title="Delete project">
                   <Trash2 size={11} strokeWidth={1.5} />
                 </button>
               )}
@@ -154,12 +162,14 @@ export default function Sidebar() {
       {/* Folders (only for active project) */}
       {activeProjectId && (
         <SidebarSection label="Folders" action={
-          <button onClick={() => setShowNewFolder(v => !v)} title="New folder" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2, lineHeight: 0, borderRadius: 'var(--radius-sm)' }}>
+          <button onClick={() => setShowNewFolder(v => !v)} title="New folder"
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2, lineHeight: 0, borderRadius: 'var(--radius-sm)' }}>
             <FolderPlus size={13} strokeWidth={1.5} />
           </button>
         }>
           {showNewFolder && (
-            <form onSubmit={e => { e.preventDefault(); if (newFolderName.trim()) createFolder.mutate(newFolderName.trim()) }} style={{ padding: '0 10px', marginBottom: 6 }}>
+            <form onSubmit={e => { e.preventDefault(); if (newFolderName.trim()) createFolder.mutate(newFolderName.trim()) }}
+              style={{ padding: '0 10px', marginBottom: 6 }}>
               <input
                 autoFocus value={newFolderName} onChange={e => setNewFolderName(e.target.value)}
                 placeholder="Folder name"
@@ -180,7 +190,7 @@ export default function Sidebar() {
 
       {/* Status footer */}
       <div style={{ padding: '12px 10px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, background: connected ? '#4ade80' : '#444', transition: 'background 0.3s' }} />
+        <span style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, background: connected ? '#4ade80' : '#666', transition: 'background 0.3s' }} />
         <span className="mv-meta" style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
           {connected ? 'Live' : 'Connecting…'}
         </span>

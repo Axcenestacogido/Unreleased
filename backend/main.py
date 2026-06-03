@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
+from sqlalchemy import text
 
 from database import engine
 import models
@@ -11,6 +12,21 @@ from routes import auth, projects, tracks, share
 from routes.events import router as events_router
 
 models.Base.metadata.create_all(bind=engine)
+
+# Safe column migrations for new fields
+_migrations = [
+    "ALTER TABLE projects ADD COLUMN cover_image TEXT",
+    "ALTER TABLE tracks ADD COLUMN bpm INTEGER",
+    "ALTER TABLE tracks ADD COLUMN key_signature VARCHAR",
+    "ALTER TABLE tracks ADD COLUMN lyrics TEXT",
+]
+with engine.connect() as _conn:
+    for _sql in _migrations:
+        try:
+            _conn.execute(text(_sql))
+            _conn.commit()
+        except Exception:
+            pass
 
 app = FastAPI(title="MusicVault", version="0.1.0")
 

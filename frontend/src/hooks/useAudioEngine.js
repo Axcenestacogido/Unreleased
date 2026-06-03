@@ -34,12 +34,31 @@ export function useAudioEngine() {
   const pitchShiftRef = useRef(null)
   const rafRef = useRef(null)
 
-  // Refs for time tracking (avoid stale closures in rAF)
   const startContextTimeRef = useRef(0)
   const startOffsetRef = useRef(0)
   const speedRef = useRef(1)
+  const pitchValueRef = useRef(0)
   const playingRef = useRef(false)
   const durationRef = useRef(0)
+  const loopARef = useRef(0)
+  const loopBRef = useRef(0)
+  const loopEnabledRef = useRef(false)
+
+  function _getLinearTime() {
+    return startOffsetRef.current + (Tone.now() - startContextTimeRef.current) * speedRef.current
+  }
+
+  function _getDisplayTime() {
+    const t = _getLinearTime()
+    if (loopEnabledRef.current && loopBRef.current > loopARef.current) {
+      const la = loopARef.current
+      const lb = loopBRef.current
+      if (t >= la) {
+        return la + ((t - la) % (lb - la))
+      }
+    }
+    return t
+  }
 
   function _dispose() {
     cancelAnimationFrame(rafRef.current)
@@ -58,12 +77,23 @@ export function useAudioEngine() {
     cancelAnimationFrame(rafRef.current)
     const tick = () => {
       if (!playingRef.current) return
-      const t = startOffsetRef.current + (Tone.now() - startContextTimeRef.current) * speedRef.current
+      const t = _getDisplayTime()
       const clamped = Math.min(Math.max(t, 0), durationRef.current)
       setCurrentTime(clamped)
       rafRef.current = requestAnimationFrame(tick)
     }
     rafRef.current = requestAnimationFrame(tick)
+  }
+
+  // Stop and restart from current display position (avoids audio doubling after param changes)
+  function _restartIfPlaying() {
+    if (!playingRef.current || !playerRef.current) return
+    const pos = _getDisplayTime()
+    startOffsetRef.current = Math.max(0, Math.min(pos, durationRef.current - 0.05))
+    try { playerRef.current.stop() } catch {}
+    startContextTimeRef.current = Tone.now()
+    playerRef.current.start(Tone.now(), startOffsetRef.current)
+    _startRaf()
   }
 
   const loadTrack = useCallback(async (trackId) => {
@@ -73,11 +103,15 @@ export function useAudioEngine() {
     setDuration(0)
     setCurrentTime(0)
     setPitchState(0)
+    pitchValueRef.current = 0
     setSpeedState(1)
     speedRef.current = 1
     setLoopEnabledState(false)
+    loopEnabledRef.current = false
     setLoopA(0)
     setLoopB(0)
+    loopARef.current = 0
+    loopBRef.current = 0
 
     try {
       await Tone.start()
@@ -93,18 +127,19 @@ export function useAudioEngine() {
       setDuration(dur)
       durationRef.current = dur
       setLoopB(dur)
+      loopBRef.current = dur
       setPeaks(extractPeaks(webAudioBuffer))
 
       const toneBuffer = new Tone.ToneAudioBuffer(webAudioBuffer)
       const pitchShift = new Tone.PitchShift(0).toDestination()
+      pitchShift.wet.value = 1
       const player = new Tone.Player(toneBuffer).connect(pitchShift)
       player.playbackRate = 1
 
       player.onstop = () => {
-        // Only mark done if we played to the end (not a seek stop)
         if (playingRef.current) {
-          const pos = startOffsetRef.current + (Tone.now() - startContextTimeRef.current) * speedRef.current
-          if (pos >= durationRef.current - 0.1) {
+          const pos = _getDisplayTime()
+          if (pos >= durationRef.current - 0.15) {
             cancelAnimationFrame(rafRef.current)
             setPlaying(false)
             playingRef.current = false
@@ -138,9 +173,7 @@ export function useAudioEngine() {
 
   const pause = useCallback(() => {
     if (!playerRef.current || !playingRef.current) return
-    // Capture position before stopping
-    const pos = startOffsetRef.current + (Tone.now() - startContextTimeRef.current) * speedRef.current
-    startOffsetRef.current = Math.min(pos, durationRef.current)
+    startOffsetRef.current = Math.min(_getDisplayTime(), durationRef.current)
     playingRef.current = false
     setPlaying(false)
     cancelAnimationFrame(rafRef.current)
@@ -150,10 +183,10 @@ export function useAudioEngine() {
   const seek = useCallback((t) => {
     const clamped = Math.max(0, Math.min(t, durationRef.current))
     startOffsetRef.current = clamped
+    startContextTimeRef.current = Tone.now()
     setCurrentTime(clamped)
     if (playingRef.current && playerRef.current) {
       try { playerRef.current.stop() } catch {}
-      startContextTimeRef.current = Tone.now()
       playerRef.current.start(Tone.now(), clamped)
       _startRaf()
     }
@@ -161,29 +194,25 @@ export function useAudioEngine() {
 
   const setSpeed = useCallback((s) => {
     const newSpeed = Math.max(0.5, Math.min(2, s))
-    // Update offset before changing speed to keep position accurate
     if (playingRef.current) {
-      startOffsetRef.current += (Tone.now() - startContextTimeRef.current) * speedRef.current
-      startContextTimeRef.current = Tone.now()
+      startOffsetRef.current = _getDisplayTime()
     }
     speedRef.current = newSpeed
     setSpeedState(newSpeed)
-    if (playerRef.current) {
-      playerRef.current.playbackRate = newSpeed
-      // Recompute pitch compensation
-      if (pitchShiftRef.current) {
-        const userPitch = pitchShiftRef.current.pitch + 12 * Math.log2(speedRef.current === newSpeed ? 1 : speedRef.current / newSpeed)
-        pitchShiftRef.current.pitch = userPitch - 12 * Math.log2(newSpeed)
-      }
+    if (playerRef.current) playerRef.current.playbackRate = newSpeed
+    if (pitchShiftRef.current) {
+      pitchShiftRef.current.pitch = pitchValueRef.current - 12 * Math.log2(newSpeed)
     }
+    _restartIfPlaying()
   }, [])
 
   const setPitch = useCallback((semitones) => {
+    pitchValueRef.current = semitones
     setPitchState(semitones)
     if (pitchShiftRef.current) {
-      // Compensate for speed: playbackRate adds 12*log2(speed) semitones of pitch
       pitchShiftRef.current.pitch = semitones - 12 * Math.log2(speedRef.current)
     }
+    _restartIfPlaying()
   }, [])
 
   const setLoopPoints = useCallback((a, b) => {
@@ -191,6 +220,8 @@ export function useAudioEngine() {
     const newB = Math.max(0, Math.min(b, durationRef.current))
     setLoopA(newA)
     setLoopB(newB)
+    loopARef.current = newA
+    loopBRef.current = newB
     if (playerRef.current) {
       playerRef.current.loopStart = Math.min(newA, newB)
       playerRef.current.loopEnd = Math.max(newA, newB)
@@ -199,8 +230,14 @@ export function useAudioEngine() {
 
   const setLoopEnabled = useCallback((enabled) => {
     setLoopEnabledState(enabled)
+    loopEnabledRef.current = enabled
     if (playerRef.current) {
       playerRef.current.loop = enabled
+    }
+    // Reset time tracking origin when toggling loop off so position is accurate
+    if (!enabled && playingRef.current) {
+      startOffsetRef.current = _getDisplayTime()
+      startContextTimeRef.current = Tone.now()
     }
   }, [])
 

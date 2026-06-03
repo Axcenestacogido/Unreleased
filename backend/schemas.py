@@ -28,17 +28,20 @@ class ProjectCreate(BaseModel):
     name: str
     description: Optional[str] = None
     color: Optional[str] = None
+    cover_image: Optional[str] = None
 
 class ProjectUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     color: Optional[str] = None
+    cover_image: Optional[str] = None
 
 class ProjectOut(BaseModel):
     id: int
     name: str
     description: Optional[str]
     color: Optional[str]
+    cover_image: Optional[str]
     created_at: datetime
     class Config:
         from_attributes = True
@@ -78,7 +81,10 @@ class TrackVersionOut(BaseModel):
 class TrackUpdate(BaseModel):
     name: Optional[str] = None
     folder_id: Optional[int] = None
-    project_id: Optional[int] = None  # for cross-project moves
+    project_id: Optional[int] = None
+    bpm: Optional[int] = None
+    key_signature: Optional[str] = None
+    lyrics: Optional[str] = None
 
 class ListenEventOut(BaseModel):
     timestamp: datetime
@@ -104,6 +110,9 @@ class TrackOut(BaseModel):
     project_id: int
     folder_id: Optional[int]
     name: str
+    bpm: Optional[int] = None
+    key_signature: Optional[str] = None
+    lyrics: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime]
     versions: List[TrackVersionOut] = []
