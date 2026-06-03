@@ -1,16 +1,18 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Outlet, useNavigate, useMatch } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import {
-  Menu, X, Play, Pause, SkipBack, SkipForward,
-  ChevronDown, ChevronUp, Music2, Plus, LogOut,
+  Play, Pause, SkipBack, SkipForward, ChevronDown,
+  Music2, House, Disc3, Search, Upload, Repeat, Shuffle, Volume2,
+  Share2, ChevronRight,
 } from 'lucide-react'
 import { usePlayer } from '../hooks/usePlayer'
 import { useAudioEngine } from '../hooks/useAudioEngine'
-import { useAuth } from '../hooks/useAuth'
 import { useSSEStatus } from '../hooks/useSSE'
 import api from '../api/client'
 import WaveCanvas from '../components/Player/WaveCanvas'
+import TrackList from '../components/TrackList/TrackList'
+import ShareModal from '../components/ShareModal/ShareModal'
 
 function fmt(s) {
   if (!s || isNaN(s)) return '0:00'
@@ -19,198 +21,359 @@ function fmt(s) {
   return `${m}:${sec.toString().padStart(2, '0')}`
 }
 
-function DrawerOverlay({ onClose }) {
-  const navigate = useNavigate()
-  const { logout } = useAuth()
-  const { connected } = useSSEStatus()
-  const qc = useQueryClient()
-  const matchProj = useMatch('/project/:id')
-  const activeId = matchProj?.params?.id
-  const [newName, setNewName] = useState('')
-  const [showNew, setShowNew] = useState(false)
+const TAP = {
+  width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center',
+  background: 'transparent', border: 'none', cursor: 'pointer', flexShrink: 0,
+  WebkitTapHighlightColor: 'transparent',
+}
 
-  const { data: projects = [] } = useQuery({
-    queryKey: ['projects'],
-    queryFn: () => api.get('/projects').then(r => r.data),
-  })
-
-  const createProject = useMutation({
-    mutationFn: name => api.post('/projects', { name }),
-    onSuccess: (res) => {
-      qc.invalidateQueries({ queryKey: ['projects'] })
-      setShowNew(false); setNewName('')
-      navigate(`/project/${res.data.id}`)
-      onClose()
-    },
-  })
-
+function Slider({ value, min, max, step, onChange, onReset }) {
+  const ref = useRef(null)
+  const pct = Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100))
+  const drag = useCallback((clientX) => {
+    const r = ref.current.getBoundingClientRect()
+    let p = Math.max(0, Math.min(1, (clientX - r.left) / r.width))
+    let v = min + p * (max - min)
+    v = Math.round(v / step) * step
+    onChange(v)
+  }, [min, max, step, onChange])
+  const onMouseDown = useCallback((e) => {
+    drag(e.clientX)
+    const move = (ev) => drag(ev.clientX)
+    const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up) }
+    window.addEventListener('mousemove', move); window.addEventListener('mouseup', up)
+  }, [drag])
   return (
-    <>
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 40, backdropFilter: 'blur(4px)' }} />
-      <div style={{
-        position: 'fixed', top: 0, left: 0, bottom: 0, width: 280,
-        background: 'var(--bg-secondary)', zIndex: 50,
-        display: 'flex', flexDirection: 'column', padding: '0 12px',
-        borderRight: '1px solid var(--border)',
-      }}>
-        <div style={{ padding: '20px 10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-lg)', fontWeight: 600, color: 'var(--text-primary)' }}>MusicVault</span>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4, lineHeight: 0 }}>
-            <X size={18} strokeWidth={1.5} />
-          </button>
-        </div>
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          <div style={{ padding: '8px 0', borderTop: '1px solid var(--border)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 10px', marginBottom: 8 }}>
-              <span className="mv-label">PROJECTS</span>
-              <button onClick={() => setShowNew(v => !v)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2, lineHeight: 0 }}>
-                <Plus size={13} strokeWidth={1.5} />
-              </button>
-            </div>
-            {showNew && (
-              <form onSubmit={e => { e.preventDefault(); if (newName.trim()) createProject.mutate(newName.trim()) }} style={{ padding: '0 10px', marginBottom: 8 }}>
-                <input autoFocus value={newName} onChange={e => setNewName(e.target.value)} placeholder="Project name"
-                  style={{ width: '100%', background: 'var(--bg-tertiary)', border: '1px solid var(--border-strong)', borderRadius: 'var(--radius-sm)', padding: '8px 10px', fontSize: 'var(--text-sm)', color: 'var(--text-primary)', outline: 'none', fontFamily: 'var(--font-ui)' }} />
-              </form>
-            )}
-            {projects.map(p => (
-              <button key={p.id} onClick={() => { navigate(`/project/${p.id}`); onClose() }}
-                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 10px', borderRadius: 'var(--radius-md)', border: 'none', background: activeId === String(p.id) ? 'var(--accent-subtle)' : 'transparent', color: activeId === String(p.id) ? 'var(--text-primary)' : 'var(--text-secondary)', fontFamily: 'var(--font-ui)', fontSize: 'var(--text-sm)', cursor: 'pointer' }}>
-                {p.name}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div style={{ padding: '12px 10px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: connected ? '#4ade80' : '#444' }} />
-            <span className="mv-meta" style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{connected ? 'Live' : 'Connecting…'}</span>
-          </div>
-          <button onClick={logout} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4, lineHeight: 0 }}>
-            <LogOut size={14} strokeWidth={1.5} />
-          </button>
-        </div>
-      </div>
-    </>
+    <div ref={ref} onMouseDown={onMouseDown} onDoubleClick={onReset}
+      style={{ position: 'relative', height: 14, cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+      <div style={{ position: 'absolute', left: 0, right: 0, height: 2, background: 'var(--waveform-inactive)', borderRadius: 2 }} />
+      <div style={{ position: 'absolute', left: 0, width: `${pct}%`, height: 2, background: 'var(--accent)', borderRadius: 2 }} />
+      <div style={{ position: 'absolute', left: `${pct}%`, width: 10, height: 10, marginLeft: -5, borderRadius: '50%', background: 'var(--accent)' }} />
+    </div>
   )
 }
 
-// Single component owns the audio engine — avoids two separate instances
-function MobilePlayer() {
-  const { currentTrack, playNext, playPrev } = usePlayer()
-  const engine = useAudioEngine()
-  const [expanded, setExpanded] = useState(false)
+/* ── Bottom nav ─────────────────────────────────────────────────────────── */
+function BottomNav({ tab, setTab }) {
+  const items = [
+    { id: 'library', Icon: House, label: 'Library' },
+    { id: 'projects', Icon: Disc3, label: 'Projects' },
+    { id: 'search', Icon: Search, label: 'Search' },
+    { id: 'upload', Icon: Upload, label: 'Upload' },
+  ]
+  return (
+    <nav style={{ flexShrink: 0, display: 'flex', background: 'var(--bg-secondary)', borderTop: '1px solid var(--border)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      {items.map(({ id, Icon: Ic, label }) => {
+        const active = tab === id
+        return (
+          <button key={id} onClick={() => setTab(id)} style={{
+            flex: 1, height: 60, display: 'flex', flexDirection: 'column', alignItems: 'center',
+            justifyContent: 'center', gap: 4, background: 'transparent', border: 'none',
+            cursor: 'pointer', color: active ? 'var(--text-primary)' : 'var(--text-muted)',
+            WebkitTapHighlightColor: 'transparent',
+            transition: 'color var(--dur-hover) var(--ease)',
+          }}>
+            <Ic size={20} strokeWidth={active ? 2 : 1.5} />
+            <span style={{ fontSize: 10, letterSpacing: '0.02em', fontWeight: active ? 500 : 400 }}>{label}</span>
+          </button>
+        )
+      })}
+    </nav>
+  )
+}
 
-  useEffect(() => {
-    if (!currentTrack) return
-    engine.loadTrack(currentTrack.id).then(() => engine.play(0))
-  }, [currentTrack?.id])
-
-  if (!currentTrack) return null
-
+/* ── Mini player ────────────────────────────────────────────────────────── */
+function MiniPlayer({ track, engine, onExpand }) {
+  if (!track) return null
   const progress = engine.duration > 0 ? engine.currentTime / engine.duration : 0
-
-  if (expanded) {
-    return (
-      <div style={{ position: 'fixed', inset: 0, zIndex: 45, background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column', padding: '0 24px 48px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 0' }}>
-          <button onClick={() => setExpanded(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4, lineHeight: 0 }}>
-            <ChevronDown size={20} strokeWidth={1.5} />
-          </button>
-          <span className="mv-label">NOW PLAYING</span>
-          <div style={{ width: 28 }} />
-        </div>
-
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px 0' }}>
-          <div style={{ width: '100%', maxWidth: 280, aspectRatio: '1', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-lg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Music2 size={56} strokeWidth={1} style={{ color: 'var(--text-muted)' }} />
-          </div>
-        </div>
-
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-xl)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {currentTrack.name}
-          </div>
-          <div className="mv-meta">{currentTrack.artist || 'Unknown artist'}</div>
-        </div>
-
-        <div style={{ height: 64, marginBottom: 8 }}>
-          <WaveCanvas peaks={engine.peaks} currentTime={engine.currentTime} duration={engine.duration} onSeek={t => engine.seek(t)} />
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 28 }}>
-          <span className="mv-mono" style={{ fontSize: 'var(--text-xs)' }}>{fmt(engine.currentTime)}</span>
-          <span className="mv-mono" style={{ fontSize: 'var(--text-xs)' }}>{fmt(engine.duration)}</span>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 24 }}>
-          <button onClick={playPrev} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: 8, lineHeight: 0 }}>
-            <SkipBack size={22} strokeWidth={1.5} />
-          </button>
-          <button onClick={() => engine.playing ? engine.pause() : engine.play()}
-            style={{ width: 60, height: 60, borderRadius: '50%', background: 'var(--accent)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#000' }}>
-            {engine.playing ? <Pause size={22} strokeWidth={1.5} /> : <Play size={22} strokeWidth={1.5} style={{ marginLeft: 2 }} />}
-          </button>
-          <button onClick={playNext} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: 8, lineHeight: 0 }}>
-            <SkipForward size={22} strokeWidth={1.5} />
-          </button>
-        </div>
+  const { playNext } = usePlayer()
+  return (
+    <div onClick={onExpand} style={{
+      flexShrink: 0, height: 64, background: 'var(--bg-tertiary)',
+      borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center',
+      gap: 12, padding: '0 8px 0 14px', cursor: 'pointer', position: 'relative',
+    }}>
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'var(--waveform-inactive)' }}>
+        <div style={{ height: '100%', width: `${progress * 100}%`, background: 'var(--accent)' }} />
       </div>
-    )
-  }
+      <div style={{ width: 40, height: 40, borderRadius: 'var(--radius-sm)', flexShrink: 0, background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--border)' }}>
+        <Music2 size={18} strokeWidth={1} style={{ color: 'var(--text-muted)' }} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="mv-ui" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{track.name}</div>
+        <div className="mv-meta" style={{ fontSize: 'var(--text-xs)' }}>{track.artist || 'Unknown artist'}</div>
+      </div>
+      <button onClick={(e) => { e.stopPropagation(); engine.playing ? engine.pause() : engine.play() }} style={TAP}>
+        {engine.playing
+          ? <Pause size={22} strokeWidth={2} style={{ color: 'var(--text-primary)' }} />
+          : <Play size={22} strokeWidth={2} style={{ color: 'var(--text-primary)', marginLeft: 2 }} />}
+      </button>
+      <button onClick={(e) => { e.stopPropagation(); playNext() }} style={TAP}>
+        <SkipForward size={20} strokeWidth={1.75} style={{ color: 'var(--text-secondary)' }} />
+      </button>
+    </div>
+  )
+}
+
+/* ── Fullscreen player ───────────────────────────────────────────────────── */
+function FullScreenPlayer({ track, engine, onClose, onShare }) {
+  const { playNext, playPrev } = usePlayer()
+  const progress = engine.duration > 0 ? engine.currentTime / engine.duration : 0
+  const [loopA, setLoopA] = useState(null)
+  const [loopB, setLoopB] = useState(null)
+  const [volume, setVolume] = useState(0.8)
+
+  const loopABtn = (active) => ({
+    width: 40, height: 36, borderRadius: 'var(--radius-sm)', cursor: 'pointer',
+    fontFamily: 'var(--font-mono)', fontSize: 'var(--text-base)', fontWeight: 500,
+    border: '1px solid var(--border-strong)',
+    background: active ? 'var(--accent)' : 'transparent',
+    color: active ? '#000' : 'var(--text-muted)',
+    WebkitTapHighlightColor: 'transparent',
+    transition: 'all var(--dur-hover) var(--ease)',
+  })
 
   return (
-    <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 30, background: 'var(--bg-elevated)', borderTop: '1px solid var(--border)' }}>
-      <div style={{ height: 2, background: 'var(--waveform-inactive)' }}>
-        <div style={{ height: '100%', width: `${progress * 100}%`, background: 'var(--accent)', transition: 'width 0.2s linear' }} />
+    <div style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column', animation: 'mvSlideUp 220ms var(--ease)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      {/* Header */}
+      <div style={{ flexShrink: 0, height: 56, display: 'flex', alignItems: 'center', padding: '0 8px' }}>
+        <button onClick={onClose} style={TAP}>
+          <ChevronDown size={24} style={{ color: 'var(--text-secondary)' }} />
+        </button>
+        <div style={{ flex: 1, textAlign: 'center' }}>
+          <span className="mv-label">{track?.project_name || 'Now Playing'}</span>
+        </div>
+        {onShare && (
+          <button onClick={onShare} style={TAP}>
+            <Share2 size={20} style={{ color: 'var(--text-secondary)' }} />
+          </button>
+        )}
+        {!onShare && <div style={{ width: 44 }} />}
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', padding: '10px 16px', gap: 12 }}>
-        <button onClick={() => setExpanded(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 0, lineHeight: 0, flexShrink: 0 }}>
-          <ChevronUp size={16} strokeWidth={1.5} />
-        </button>
-        <div style={{ width: 36, height: 36, borderRadius: 'var(--radius-sm)', background: 'var(--bg-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <Music2 size={14} strokeWidth={1} style={{ color: 'var(--text-muted)' }} />
+
+      <div style={{ flex: 1, overflowY: 'auto', padding: '8px 24px 24px', display: 'flex', flexDirection: 'column' }}>
+        {/* Cover */}
+        <div style={{ width: '100%', maxWidth: 360, aspectRatio: '1', alignSelf: 'center', borderRadius: 'var(--radius-lg)', background: 'var(--bg-tertiary)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 24, marginTop: 8 }}>
+          <Music2 size={56} strokeWidth={1} style={{ color: 'var(--text-muted)' }} />
         </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: 'var(--font-ui)', fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {currentTrack.name}
+
+        {/* Title */}
+        <div style={{ marginBottom: 20 }}>
+          <div className="mv-track-title" style={{ fontSize: 'var(--text-xl)' }}>{track?.name}</div>
+          <div className="mv-meta" style={{ marginTop: 4 }}>{track?.artist || 'Unknown artist'}</div>
+        </div>
+
+        {/* Waveform */}
+        <div style={{ height: 88 }}>
+          <WaveCanvas
+            peaks={engine.peaks} currentTime={engine.currentTime} duration={engine.duration}
+            onSeek={(t) => engine.seek(t)}
+            loopA={loopA != null ? loopA * engine.duration : 0}
+            loopB={loopB != null ? loopB * engine.duration : engine.duration}
+            loopEnabled={loopA != null && loopB != null}
+          />
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, marginBottom: 20 }}>
+          <span className="mv-mono">{fmt(engine.currentTime)}</span>
+          <span className="mv-mono">{fmt(engine.duration)}</span>
+        </div>
+
+        {/* Transport */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 24, marginBottom: 24 }}>
+          <button onClick={playPrev} style={TAP}>
+            <SkipBack size={26} strokeWidth={1.75} style={{ color: 'var(--text-primary)' }} />
+          </button>
+          <button onClick={() => engine.playing ? engine.pause() : engine.play()} style={{ width: 64, height: 64, borderRadius: '50%', background: 'var(--accent)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', WebkitTapHighlightColor: 'transparent' }}>
+            {engine.playing
+              ? <Pause size={28} strokeWidth={2} style={{ color: '#000' }} />
+              : <Play size={28} strokeWidth={2} style={{ color: '#000', marginLeft: 3 }} />}
+          </button>
+          <button onClick={playNext} style={TAP}>
+            <SkipForward size={26} strokeWidth={1.75} style={{ color: 'var(--text-primary)' }} />
+          </button>
+        </div>
+
+        {/* A-B loop + repeat/shuffle */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 24 }}>
+          <span className="mv-label" style={{ marginRight: 4 }}>Loop</span>
+          <button onClick={() => setLoopA(loopA == null ? progress : null)} style={loopABtn(loopA != null)}>A</button>
+          <button onClick={() => setLoopB(loopB == null ? Math.min(1, progress + 0.15) : null)} style={loopABtn(loopB != null)}>B</button>
+          <div style={{ width: 16 }} />
+          <button style={TAP}><Repeat size={18} style={{ color: 'var(--text-muted)' }} /></button>
+          <button style={TAP}><Shuffle size={18} style={{ color: 'var(--text-muted)' }} /></button>
+        </div>
+
+        {/* Volume */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+          <Volume2 size={18} strokeWidth={1.5} style={{ color: 'var(--text-secondary)' }} />
+          <div style={{ flex: 1 }}>
+            <Slider value={volume} min={0} max={1} step={0.01} onChange={setVolume} onReset={() => setVolume(0.8)} />
           </div>
-          <div className="mv-mono" style={{ fontSize: 10 }}>{fmt(engine.currentTime)} / {fmt(engine.duration)}</div>
         </div>
-        <button onClick={playPrev} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: 6, lineHeight: 0 }}>
-          <SkipBack size={16} strokeWidth={1.5} />
-        </button>
-        <button onClick={() => engine.playing ? engine.pause() : engine.play()}
-          style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--bg-tertiary)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'var(--text-primary)' }}>
-          {engine.playing ? <Pause size={16} strokeWidth={1.5} /> : <Play size={16} strokeWidth={1.5} style={{ marginLeft: 1 }} />}
-        </button>
-        <button onClick={playNext} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: 6, lineHeight: 0 }}>
-          <SkipForward size={16} strokeWidth={1.5} />
-        </button>
+
+        {/* Pitch + Speed */}
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 20, display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
+              <span className="mv-label">Pitch</span>
+              <span className="mv-mono" style={{ fontSize: 'var(--text-xs)' }}>{engine.pitch > 0 ? '+' : ''}{engine.pitch} st</span>
+            </div>
+            <Slider value={engine.pitch} min={-12} max={12} step={1} onChange={(v) => engine.setPitch(Math.round(v))} onReset={() => engine.setPitch(0)} />
+          </div>
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
+              <span className="mv-label">Speed</span>
+              <span className="mv-mono" style={{ fontSize: 'var(--text-xs)' }}>{engine.speed.toFixed(2)}×</span>
+            </div>
+            <Slider value={engine.speed} min={0.5} max={1.5} step={0.05} onChange={engine.setSpeed} onReset={() => engine.setSpeed(1)} />
+          </div>
+        </div>
       </div>
     </div>
   )
 }
 
+/* ── Projects tab ───────────────────────────────────────────────────────── */
+function ProjectsTab({ onPick }) {
+  const matchProj = useMatch('/project/:id')
+  const activeId = matchProj?.params?.id
+  const { data: projects = [] } = useQuery({
+    queryKey: ['projects'],
+    queryFn: () => api.get('/projects').then(r => r.data),
+  })
+  const { data: allTracks = [] } = useQuery({
+    queryKey: ['tracks-all'],
+    queryFn: () => Promise.all(projects.map(p => api.get(`/tracks/project/${p.id}`).then(r => ({ id: p.id, count: r.data.length })))),
+    enabled: projects.length > 0,
+  })
+  const counts = Object.fromEntries((allTracks || []).map(t => [t.id, t.count]))
+
+  return (
+    <div style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-primary)' }}>
+      <div style={{ padding: '20px 16px 8px' }}>
+        <h1 className="mv-h2">Projects</h1>
+      </div>
+      <div style={{ padding: '4px 8px 16px' }}>
+        {projects.map(p => (
+          <button key={p.id} onClick={() => onPick(p.id)} style={{
+            display: 'flex', alignItems: 'center', gap: 14, width: '100%',
+            padding: '14px 12px', border: 'none', cursor: 'pointer', textAlign: 'left',
+            background: activeId === String(p.id) ? 'var(--accent-subtle)' : 'transparent',
+            borderRadius: 'var(--radius-md)', WebkitTapHighlightColor: 'transparent',
+          }}>
+            <div style={{ width: 44, height: 44, borderRadius: 'var(--radius-md)', flexShrink: 0, background: 'var(--bg-tertiary)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Disc3 size={20} strokeWidth={1.5} style={{ color: 'var(--text-secondary)' }} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="mv-ui" style={{ color: 'var(--text-primary)' }}>{p.name}</div>
+              <div className="mv-meta" style={{ fontSize: 'var(--text-xs)' }}>{counts[p.id] ?? '…'} tracks</div>
+            </div>
+            <ChevronRight size={18} style={{ color: 'var(--text-muted)' }} />
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/* ── Search tab placeholder ─────────────────────────────────────────────── */
+function SearchTab() {
+  return (
+    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <span className="mv-meta">Search coming soon.</span>
+    </div>
+  )
+}
+
+/* ── Mobile shell ─────────────────────────────────────────────────────────── */
 export default function MobileLayout() {
-  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [tab, setTab] = useState('library')
+  const [expanded, setExpanded] = useState(false)
+  const [shareTrack, setShareTrack] = useState(null)
+  const navigate = useNavigate()
+  const matchProj = useMatch('/project/:id')
+  const activeProjectId = matchProj?.params?.id
+
   const { currentTrack } = usePlayer()
+  const engine = useAudioEngine()
+
+  // Load track when it changes
+  useEffect(() => {
+    if (!currentTrack) return
+    engine.loadTrack(currentTrack.id).then(() => engine.play(0))
+  }, [currentTrack?.id])
+
+  const { data: project } = useQuery({
+    queryKey: ['project', activeProjectId],
+    queryFn: () => api.get(`/projects/${activeProjectId}`).then(r => r.data),
+    enabled: !!activeProjectId,
+  })
+
+  const { data: tracks = [] } = useQuery({
+    queryKey: ['tracks', activeProjectId],
+    queryFn: () => api.get(`/tracks/project/${activeProjectId}`).then(r => r.data),
+    enabled: !!activeProjectId,
+  })
+
+  function handleTabChange(id) {
+    if (id === 'upload') return  // UploadZone is inline in TrackList
+    setTab(id)
+    if (id === 'library' && !activeProjectId) navigate('/')
+  }
+
+  function handlePickProject(id) {
+    navigate(`/project/${id}`)
+    setTab('library')
+  }
+
+  const headerTitle = tab === 'search' ? 'Search' : tab === 'projects' ? 'MusicVault' : (project?.name || 'MusicVault')
+  const headerSub = tab === 'library' && tracks.length > 0 ? `${tracks.length} track${tracks.length !== 1 ? 's' : ''}` : null
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: 'var(--bg-primary)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0, background: 'var(--bg-secondary)' }}>
-        <button onClick={() => setDrawerOpen(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: 4, lineHeight: 0, marginRight: 12 }}>
-          <Menu size={20} strokeWidth={1.5} />
-        </button>
-        <span style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text-primary)' }}>MusicVault</span>
+      {/* Header */}
+      <header style={{ flexShrink: 0, height: 52, display: 'flex', alignItems: 'center', gap: 12, padding: '0 16px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-base)', fontWeight: 600, letterSpacing: 'var(--tracking-display)', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {headerTitle}
+          </div>
+          {headerSub && <div className="mv-meta" style={{ fontSize: 'var(--text-xs)' }}>{headerSub}</div>}
+        </div>
+        {tab === 'library' && project && (
+          <button onClick={() => setShareTrack(null)} style={TAP}>
+            <Share2 size={20} style={{ color: 'var(--text-secondary)' }} />
+          </button>
+        )}
+      </header>
+
+      {/* Content */}
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {tab === 'search' ? (
+          <SearchTab />
+        ) : tab === 'projects' ? (
+          <ProjectsTab onPick={handlePickProject} />
+        ) : (
+          <Outlet />
+        )}
       </div>
 
-      <div style={{ flex: 1, overflow: 'hidden', paddingBottom: currentTrack ? 68 : 0 }}>
-        <Outlet />
-      </div>
+      {/* Mini player */}
+      <MiniPlayer track={currentTrack} engine={engine} onExpand={() => setExpanded(true)} />
 
-      <MobilePlayer />
+      {/* Bottom nav */}
+      <BottomNav tab={tab} setTab={handleTabChange} />
 
-      {drawerOpen && <DrawerOverlay onClose={() => setDrawerOpen(false)} />}
+      {/* Full player */}
+      {expanded && (
+        <FullScreenPlayer
+          track={currentTrack}
+          engine={engine}
+          onClose={() => setExpanded(false)}
+          onShare={currentTrack ? () => { setShareTrack(currentTrack); setExpanded(false) } : null}
+        />
+      )}
+
+      {shareTrack && <ShareModal track={shareTrack} onClose={() => setShareTrack(null)} />}
     </div>
   )
 }
