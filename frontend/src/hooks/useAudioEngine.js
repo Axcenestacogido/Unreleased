@@ -29,9 +29,11 @@ export function useAudioEngine() {
   const [loopEnabled, setLoopEnabledState] = useState(false)
   const [loopA, setLoopA] = useState(0)
   const [loopB, setLoopB] = useState(0)
+  const [loadedTrackId, setLoadedTrackId] = useState(null)
 
   const playerRef = useRef(null)
   const pitchShiftRef = useRef(null)
+  const masterGainRef = useRef(null)
   const rafRef = useRef(null)
   const stemPlayersRef = useRef([])
 
@@ -75,13 +77,16 @@ export function useAudioEngine() {
     try { playerRef.current?.stop() } catch {}
     playerRef.current?.dispose()
     pitchShiftRef.current?.dispose()
+    masterGainRef.current?.dispose()
     _disposeStemPlayers()
     playerRef.current = null
     pitchShiftRef.current = null
+    masterGainRef.current = null
     setPlaying(false)
     playingRef.current = false
     setCurrentTime(0)
     startOffsetRef.current = 0
+    setLoadedTrackId(null)
   }
 
   function _startRaf() {
@@ -94,17 +99,6 @@ export function useAudioEngine() {
       rafRef.current = requestAnimationFrame(tick)
     }
     rafRef.current = requestAnimationFrame(tick)
-  }
-
-  // Stop and restart from current display position (avoids audio doubling after param changes)
-  function _restartIfPlaying() {
-    if (!playingRef.current || !playerRef.current) return
-    const pos = _getDisplayTime()
-    startOffsetRef.current = Math.max(0, Math.min(pos, durationRef.current - 0.05))
-    try { playerRef.current.stop() } catch {}
-    startContextTimeRef.current = Tone.now()
-    playerRef.current.start(Tone.now(), startOffsetRef.current)
-    _startRaf()
   }
 
   const loadTrack = useCallback(async (trackId) => {
@@ -142,7 +136,9 @@ export function useAudioEngine() {
       setPeaks(extractPeaks(webAudioBuffer))
 
       const toneBuffer = new Tone.ToneAudioBuffer(webAudioBuffer)
-      const pitchShift = new Tone.PitchShift(0).toDestination()
+      // masterGain lets us mute the full mix when stems are active
+      const masterGain = new Tone.Volume(0).toDestination()
+      const pitchShift = new Tone.PitchShift(0).connect(masterGain)
       pitchShift.wet.value = 1
       const player = new Tone.Player(toneBuffer).connect(pitchShift)
       player.playbackRate = 1
@@ -159,8 +155,10 @@ export function useAudioEngine() {
         }
       }
 
+      masterGainRef.current = masterGain
       pitchShiftRef.current = pitchShift
       playerRef.current = player
+      setLoadedTrackId(trackId)
     } catch (err) {
       console.error('Audio load error:', err)
     } finally {
@@ -214,10 +212,12 @@ export function useAudioEngine() {
     }
   }, [])
 
+  // Change speed dynamically without restarting — updates playbackRate on all active players
   const setSpeed = useCallback((s) => {
     const newSpeed = Math.max(0.5, Math.min(2, s))
     if (playingRef.current) {
       startOffsetRef.current = _getDisplayTime()
+      startContextTimeRef.current = Tone.now()
     }
     speedRef.current = newSpeed
     setSpeedState(newSpeed)
@@ -225,16 +225,18 @@ export function useAudioEngine() {
     if (pitchShiftRef.current) {
       pitchShiftRef.current.pitch = pitchValueRef.current - 12 * Math.log2(newSpeed)
     }
-    _restartIfPlaying()
+    stemPlayersRef.current.forEach(({ player }) => {
+      player.playbackRate = newSpeed
+    })
   }, [])
 
+  // Change pitch dynamically via PitchShift node — no audio restart needed
   const setPitch = useCallback((semitones) => {
     pitchValueRef.current = semitones
     setPitchState(semitones)
     if (pitchShiftRef.current) {
       pitchShiftRef.current.pitch = semitones - 12 * Math.log2(speedRef.current)
     }
-    _restartIfPlaying()
   }, [])
 
   const setLoopPoints = useCallback((a, b) => {
@@ -256,7 +258,6 @@ export function useAudioEngine() {
     if (playerRef.current) {
       playerRef.current.loop = enabled
     }
-    // Reset time tracking origin when toggling loop off so position is accurate
     if (!enabled && playingRef.current) {
       startOffsetRef.current = _getDisplayTime()
       startContextTimeRef.current = Tone.now()
@@ -290,6 +291,10 @@ export function useAudioEngine() {
         console.error('Stem load error:', e)
       }
     }
+    // Mute the full-mix track when stems are active so they don't double up
+    if (masterGainRef.current) {
+      masterGainRef.current.volume.value = stems.length > 0 ? -Infinity : 0
+    }
   }, [])
 
   const setStemVolume = useCallback((stemId, volume) => {
@@ -299,7 +304,7 @@ export function useAudioEngine() {
 
   return {
     isLoading, peaks, duration, playing, currentTime,
-    speed, pitch, loopEnabled, loopA, loopB,
+    speed, pitch, loopEnabled, loopA, loopB, loadedTrackId,
     loadTrack, loadStems, setStemVolume, play, pause, seek,
     setSpeed, setPitch, setLoopPoints, setLoopEnabled,
   }
