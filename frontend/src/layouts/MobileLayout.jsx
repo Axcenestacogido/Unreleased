@@ -447,10 +447,14 @@ export default function MobileLayout() {
   skipNextRef.current = handleSkipNext
   skipPrevRef.current = handleSkipPrev
 
-  // Load track when it changes
+  // Load track when it changes — cancel flag prevents stale play() if track changes mid-load
   useEffect(() => {
     if (!currentTrack) return
-    engine.loadTrack(currentTrack.id).then(() => engine.play(0))
+    let cancelled = false
+    engine.loadTrack(currentTrack.id).then(() => {
+      if (!cancelled) engine.play(0)
+    })
+    return () => { cancelled = true }
   }, [currentTrack?.id])
 
   // Repeat: when track finishes, decide what to do

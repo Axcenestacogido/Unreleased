@@ -35,12 +35,13 @@ export function useAudioEngine() {
   const pitchShiftRef = useRef(null)
   const rafRef = useRef(null)
 
-  // Refs for time tracking (avoid stale closures in rAF)
   const startContextTimeRef = useRef(0)
   const startOffsetRef = useRef(0)
   const speedRef = useRef(1)
+  const pitchRef = useRef(0)   // user-desired pitch, separate from compensated value
   const playingRef = useRef(false)
   const durationRef = useRef(0)
+  const loadGenRef = useRef(0) // increments on every loadTrack call; stale loads bail early
 
   function _dispose() {
     cancelAnimationFrame(rafRef.current)
@@ -60,20 +61,29 @@ export function useAudioEngine() {
     const tick = () => {
       if (!playingRef.current) return
       const t = startOffsetRef.current + (Tone.now() - startContextTimeRef.current) * speedRef.current
-      const clamped = Math.min(Math.max(t, 0), durationRef.current)
-      setCurrentTime(clamped)
+      if (t >= durationRef.current) {
+        // Natural end — stop cleanly
+        cancelAnimationFrame(rafRef.current)
+        setCurrentTime(durationRef.current)
+        setPlaying(false)
+        playingRef.current = false
+        return
+      }
+      setCurrentTime(Math.max(0, t))
       rafRef.current = requestAnimationFrame(tick)
     }
     rafRef.current = requestAnimationFrame(tick)
   }
 
   const loadTrack = useCallback(async (trackId) => {
+    const gen = ++loadGenRef.current // capture this load's generation
     _dispose()
     setIsLoading(true)
     setPeaks([])
     setDuration(0)
     setCurrentTime(0)
     setPitchState(0)
+    pitchRef.current = 0
     setSpeedState(1)
     speedRef.current = 1
     setLoopEnabledState(false)
@@ -87,8 +97,17 @@ export function useAudioEngine() {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (!res.ok) throw new Error('Stream failed')
+
+      // Bail if a newer loadTrack was called while fetching
+      if (gen !== loadGenRef.current) return
+
       const arrayBuffer = await res.arrayBuffer()
+
+      if (gen !== loadGenRef.current) return
+
       const webAudioBuffer = await Tone.context.rawContext.decodeAudioData(arrayBuffer)
+
+      if (gen !== loadGenRef.current) return
 
       const dur = webAudioBuffer.duration
       setDuration(dur)
@@ -101,15 +120,15 @@ export function useAudioEngine() {
       const player = new Tone.Player(toneBuffer).connect(pitchShift)
       player.playbackRate = 1
 
+      // onstop fires on seek-stops too; rAF handles natural end, so just clean up here
       player.onstop = () => {
-        // Only mark done if we played to the end (not a seek stop)
-        if (playingRef.current) {
+        if (playingRef.current && playerRef.current === player) {
           const pos = startOffsetRef.current + (Tone.now() - startContextTimeRef.current) * speedRef.current
-          if (pos >= durationRef.current - 0.1) {
+          if (pos >= durationRef.current - 0.15) {
             cancelAnimationFrame(rafRef.current)
+            setCurrentTime(durationRef.current)
             setPlaying(false)
             playingRef.current = false
-            setCurrentTime(durationRef.current)
           }
         }
       }
@@ -117,9 +136,9 @@ export function useAudioEngine() {
       pitchShiftRef.current = pitchShift
       playerRef.current = player
     } catch (err) {
-      console.error('Audio load error:', err)
+      if (gen === loadGenRef.current) console.error('Audio load error:', err)
     } finally {
-      setIsLoading(false)
+      if (gen === loadGenRef.current) setIsLoading(false)
     }
   }, [])
 
@@ -139,7 +158,6 @@ export function useAudioEngine() {
 
   const pause = useCallback(() => {
     if (!playerRef.current || !playingRef.current) return
-    // Capture position before stopping
     const pos = startOffsetRef.current + (Tone.now() - startContextTimeRef.current) * speedRef.current
     startOffsetRef.current = Math.min(pos, durationRef.current)
     playingRef.current = false
@@ -162,7 +180,6 @@ export function useAudioEngine() {
 
   const setSpeed = useCallback((s) => {
     const newSpeed = Math.max(0.5, Math.min(2, s))
-    // Update offset before changing speed to keep position accurate
     if (playingRef.current) {
       startOffsetRef.current += (Tone.now() - startContextTimeRef.current) * speedRef.current
       startContextTimeRef.current = Tone.now()
@@ -171,18 +188,17 @@ export function useAudioEngine() {
     setSpeedState(newSpeed)
     if (playerRef.current) {
       playerRef.current.playbackRate = newSpeed
-      // Recompute pitch compensation
       if (pitchShiftRef.current) {
-        const userPitch = pitchShiftRef.current.pitch + 12 * Math.log2(speedRef.current === newSpeed ? 1 : speedRef.current / newSpeed)
-        pitchShiftRef.current.pitch = userPitch - 12 * Math.log2(newSpeed)
+        // Keep user pitch; compensate for the semitone shift caused by playbackRate
+        pitchShiftRef.current.pitch = pitchRef.current - 12 * Math.log2(newSpeed)
       }
     }
   }, [])
 
   const setPitch = useCallback((semitones) => {
+    pitchRef.current = semitones
     setPitchState(semitones)
     if (pitchShiftRef.current) {
-      // Compensate for speed: playbackRate adds 12*log2(speed) semitones of pitch
       pitchShiftRef.current.pitch = semitones - 12 * Math.log2(speedRef.current)
     }
   }, [])
@@ -198,18 +214,18 @@ export function useAudioEngine() {
     }
   }, [])
 
-  const setVolume = useCallback((v) => {
-    const clamped = Math.max(0, Math.min(1, v))
-    setVolumeState(clamped)
-    const db = clamped <= 0 ? -Infinity : 20 * Math.log10(Math.max(clamped, 0.0001))
-    Tone.getDestination().volume.value = db
-  }, [])
-
   const setLoopEnabled = useCallback((enabled) => {
     setLoopEnabledState(enabled)
     if (playerRef.current) {
       playerRef.current.loop = enabled
     }
+  }, [])
+
+  const setVolume = useCallback((v) => {
+    const clamped = Math.max(0, Math.min(1, v))
+    setVolumeState(clamped)
+    const db = clamped <= 0 ? -Infinity : 20 * Math.log10(Math.max(clamped, 0.0001))
+    Tone.getDestination().volume.value = db
   }, [])
 
   useEffect(() => {
