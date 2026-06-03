@@ -82,6 +82,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
   const [separating, setSeparating] = useState(false)
   const saveTimeout = useRef(null)
   const stemInputRef = useRef(null)
+  const wasPlayingRef = useRef(false)
 
   // Fetch stems via query so SSE invalidation triggers a refresh
   const { data: stems = [] } = useQuery({
@@ -133,6 +134,16 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
 
   function handleSeek(t) {
     if (t !== null && t !== undefined) engine.seek(t)
+  }
+
+  function handleScrubStart() {
+    wasPlayingRef.current = engine.playing
+    if (engine.playing) engine.pause()
+  }
+
+  function handleScrubEnd(t) {
+    engine.seek(t)
+    if (wasPlayingRef.current) engine.play()
   }
 
   function handleLoopAClick() {
@@ -284,11 +295,11 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
               currentTime={engine.currentTime}
               duration={engine.duration}
               onSeek={handleSeek}
+              onScrubStart={handleScrubStart}
+              onScrubEnd={handleScrubEnd}
               loopA={loopA ?? 0}
               loopB={loopB ?? engine.duration}
               loopEnabled={loopActive}
-              clickMode="seek"
-              onClickDone={() => {}}
             />
           )}
         </div>
