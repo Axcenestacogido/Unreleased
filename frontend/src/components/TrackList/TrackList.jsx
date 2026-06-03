@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Share2, Trash2, History, Upload, FolderInput, Share, BarChart2, Mic, Plus, MoreVertical, Music2, Camera } from 'lucide-react'
+import { Share2, Trash2, History, Upload, FolderInput, Share, BarChart2, Mic, Plus, MoreVertical, Music2, Camera, ChevronLeft } from 'lucide-react'
 import api from '../../api/client'
 import { usePlayer } from '../../hooks/usePlayer'
 import MoveTrackModal from './MoveTrackModal'
@@ -275,6 +276,7 @@ function NewVersionModal({ track, onClose }) {
 export default function TrackList({ projectId, folderId, project, onShare, onShareProject, onRecord, onAnalytics }) {
   const { currentTrack } = usePlayer()
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const [newVersionTrack, setNewVersionTrack] = useState(null)
   const [moveTrack, setMoveTrack] = useState(null)
   const coverInputRef = useRef()
@@ -332,6 +334,23 @@ export default function TrackList({ projectId, folderId, project, onShare, onSha
             )}
             {/* Gradient overlay */}
             <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.7) 0%, transparent 60%)' }} />
+
+            {/* Back button */}
+            <button
+              onClick={() => navigate('/')}
+              title="Volver"
+              style={{
+                position: 'absolute', top: 12, left: 12,
+                width: 32, height: 32, borderRadius: '50%',
+                border: '1px solid rgba(255,255,255,0.25)',
+                background: 'rgba(0,0,0,0.45)',
+                color: '#fff', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                backdropFilter: 'blur(4px)',
+              }}
+            >
+              <ChevronLeft size={18} strokeWidth={2} />
+            </button>
 
             {/* Project info over image */}
             <div style={{ position: 'relative', padding: '0 28px 16px', flex: 1, minWidth: 0 }}>
