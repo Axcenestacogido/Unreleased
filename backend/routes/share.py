@@ -96,6 +96,20 @@ def delete_link(
     link = db.query(models.SharedLink).filter(models.SharedLink.token == token).first()
     if not link:
         raise HTTPException(status_code=404, detail="Link not found")
+
+    if link.track_id:
+        owned = db.query(models.Track).join(models.Project).filter(
+            models.Track.id == link.track_id,
+            models.Project.user_id == user.id
+        ).first()
+    else:
+        owned = db.query(models.Project).filter(
+            models.Project.id == link.project_id,
+            models.Project.user_id == user.id
+        ).first()
+    if not owned:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
     db.delete(link)
     db.commit()
 
@@ -252,7 +266,7 @@ def stream_shared_project_track(
             "type": "listen",
             "token": link.token,
             "play_count": link.play_count,
-            "track_id": link.track_id,
+            "track_id": track_id,
             "track_name": track.name,
             "listen_event": {"timestamp": now, "ip_hash": ip_hash},
         })

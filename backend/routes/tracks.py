@@ -241,12 +241,20 @@ def _stream_version(track: models.Track, version_number: Optional[int], request:
 
     if range_header:
         # Range request for seek support
-        start, end = 0, file_size - 1
-        range_val = range_header.strip().replace("bytes=", "")
-        parts = range_val.split("-")
-        start = int(parts[0]) if parts[0] else 0
-        end = int(parts[1]) if parts[1] else file_size - 1
-        end = min(end, file_size - 1)
+        try:
+            range_val = range_header.strip().replace("bytes=", "")
+            parts = range_val.split("-")
+            start = int(parts[0]) if parts[0] else 0
+            end = int(parts[1]) if len(parts) > 1 and parts[1] else file_size - 1
+            end = min(end, file_size - 1)
+            if start < 0 or start >= file_size or start > end:
+                raise ValueError("invalid range")
+        except (ValueError, IndexError):
+            from fastapi.responses import Response
+            return Response(
+                status_code=416,
+                headers={"Content-Range": f"bytes */{file_size}"},
+            )
         length = end - start + 1
 
         def gen():

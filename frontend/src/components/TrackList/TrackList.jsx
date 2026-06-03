@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Share2, Trash2, History, Upload, FolderInput, Share, Mic, Plus, MoreHorizontal, Music2, Camera, ChevronLeft, Play, Lock, Clock } from 'lucide-react'
@@ -99,17 +99,31 @@ function TrackRow({ track, allTracks, isActive, isPlaying, onShare, onNewVersion
   const [menuOpen, setMenuOpen] = useState(false)
 
   const menuBtnRef = useRef(null)
-  const handleGlobalClick = (e) => {
-    if (menuBtnRef.current && !menuBtnRef.current.contains(e.target)) {
-      setMenuOpen(false)
-      document.removeEventListener('click', handleGlobalClick)
+  const listenerRef = useRef(null)
+
+  useEffect(() => {
+    return () => {
+      if (listenerRef.current) document.removeEventListener('click', listenerRef.current)
     }
-  }
+  }, [])
 
   function openMenu(e) {
     e.stopPropagation()
-    setMenuOpen(v => !v)
-    if (!menuOpen) setTimeout(() => document.addEventListener('click', handleGlobalClick), 0)
+    const willOpen = !menuOpen
+    setMenuOpen(willOpen)
+    if (willOpen) {
+      listenerRef.current = (ev) => {
+        if (menuBtnRef.current && !menuBtnRef.current.contains(ev.target)) {
+          setMenuOpen(false)
+          document.removeEventListener('click', listenerRef.current)
+          listenerRef.current = null
+        }
+      }
+      setTimeout(() => document.addEventListener('click', listenerRef.current), 0)
+    } else if (listenerRef.current) {
+      document.removeEventListener('click', listenerRef.current)
+      listenerRef.current = null
+    }
   }
 
   return (
@@ -217,7 +231,7 @@ function fmtTotal(secs) {
 }
 
 export default function TrackList({ projectId, folderId, project, onShare, onShareProject, onRecord, onAnalytics }) {
-  const { currentTrack, play } = usePlayer()
+  const { currentTrack, play, playing } = usePlayer()
   const qc = useQueryClient()
   const navigate = useNavigate()
   const [newVersionTrack, setNewVersionTrack] = useState(null)
@@ -372,7 +386,7 @@ export default function TrackList({ projectId, folderId, project, onShare, onSha
             track={t}
             allTracks={tracks}
             isActive={currentTrack?.id === t.id}
-            isPlaying={currentTrack?.id === t.id}
+            isPlaying={currentTrack?.id === t.id && playing}
             onShare={onShare}
             onNewVersion={setNewVersionTrack}
             onMove={setMoveTrack}

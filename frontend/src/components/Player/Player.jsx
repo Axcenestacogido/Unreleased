@@ -494,7 +494,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <span className="mv-label">BPM</span>
                 <input type="number" min="1" max="999" placeholder="ÔÇö" value={bpm}
-                  onChange={e => { setBpm(e.target.value); if (currentTrack) scheduleSave({ bpm: e.target.value ? parseInt(e.target.value) : null }) }}
+                  onChange={e => { setBpm(e.target.value); const v = parseInt(e.target.value, 10); if (currentTrack) scheduleSave({ bpm: isNaN(v) ? null : v }) }}
                   style={inputStyle} />
               </div>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -705,7 +705,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 5 }}>
                     <span style={{ fontSize: 11, color: 'var(--text-muted)', letterSpacing: '0.08em', fontWeight: 600 }}>BPM</span>
                     <input type="number" min="1" max="999" placeholder="ÔÇö" value={bpm}
-                      onChange={e => { setBpm(e.target.value); scheduleSave({ bpm: e.target.value ? parseInt(e.target.value) : null }) }}
+                      onChange={e => { setBpm(e.target.value); const v = parseInt(e.target.value, 10); scheduleSave({ bpm: isNaN(v) ? null : v }) }}
                       style={{ width: '100%', background: 'var(--bg-secondary)', border: 'none', borderRadius: 10, padding: '10px 12px', fontSize: 15, color: 'var(--text-primary)', outline: 'none' }} />
                   </div>
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -881,7 +881,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
 }
 
 export default function Player({ isMobile = false }) {
-  const { currentTrack, playNext, playPrev } = usePlayer()
+  const { currentTrack, playNext, playPrev, setPlaying } = usePlayer()
   const engine = useAudioEngine()
   const [expanded, setExpanded] = useState(false)
 
@@ -892,6 +892,11 @@ export default function Player({ isMobile = false }) {
     if (engine.loadedTrackId === currentTrack.id) return
     engine.loadTrack(currentTrack.id).then(() => engine.play(0))
   }, [currentTrack?.id])
+
+  // Keep PlayerContext in sync so TrackList can show the equalizer only when actually playing
+  useEffect(() => {
+    setPlaying(engine.playing)
+  }, [engine.playing])
 
   function togglePlay() {
     if (engine.playing) engine.pause()
