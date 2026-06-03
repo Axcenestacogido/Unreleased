@@ -138,10 +138,21 @@ export function useAudioEngine() {
       const toneBuffer = new Tone.ToneAudioBuffer(webAudioBuffer)
       // masterGain lets us mute the full mix when stems are active
       const masterGain = new Tone.Volume(0).toDestination()
-      const pitchShift = new Tone.PitchShift().connect(masterGain)
-      pitchShift.pitch.value = 0
-      pitchShift.wet.value = 1
-      const player = new Tone.Player(toneBuffer).connect(pitchShift)
+
+      // PitchShift may fail in certain browser/worklet configurations — fall back
+      // to a direct connection so audio always plays even without pitch control.
+      let pitchShift = null
+      let audioSink = masterGain
+      try {
+        const ps = new Tone.PitchShift({ pitch: 0, wet: 1 })
+        ps.connect(masterGain)
+        pitchShift = ps
+        audioSink = ps
+      } catch (e) {
+        console.warn('PitchShift unavailable, using direct connection:', e)
+      }
+
+      const player = new Tone.Player(toneBuffer).connect(audioSink)
       player.playbackRate = 1
 
       player.onstop = () => {
@@ -157,8 +168,9 @@ export function useAudioEngine() {
       }
 
       masterGainRef.current = masterGain
-      pitchShiftRef.current = pitchShift
+      pitchShiftRef.current = pitchShift  // may be null if PitchShift failed
       playerRef.current = player
+      console.log('[audio] track loaded, player ready, pitchShift:', !!pitchShift)
       setLoadedTrackId(trackId)
     } catch (err) {
       console.error('Audio load error:', err)
@@ -224,7 +236,7 @@ export function useAudioEngine() {
     setSpeedState(newSpeed)
     if (playerRef.current) playerRef.current.playbackRate = newSpeed
     if (pitchShiftRef.current) {
-      pitchShiftRef.current.pitch.value = pitchValueRef.current - 12 * Math.log2(newSpeed)
+      try { pitchShiftRef.current.pitch.value = pitchValueRef.current - 12 * Math.log2(newSpeed) } catch {}
     }
     stemPlayersRef.current.forEach(({ player }) => {
       player.playbackRate = newSpeed
@@ -236,8 +248,7 @@ export function useAudioEngine() {
     pitchValueRef.current = semitones
     setPitchState(semitones)
     if (pitchShiftRef.current) {
-      // PitchShift.pitch is a Tone.Signal — must use .value to update it
-      pitchShiftRef.current.pitch.value = semitones - 12 * Math.log2(speedRef.current)
+      try { pitchShiftRef.current.pitch.value = semitones - 12 * Math.log2(speedRef.current) } catch {}
     }
   }, [])
 
