@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 from database import get_db
 import models
 import schemas
-from auth import get_current_user, pwd_context
+import bcrypt
+from auth import get_current_user
 from events import event_bus
 from routes.tracks import _stream_version
 
@@ -53,7 +54,7 @@ def create_link(
             raise HTTPException(status_code=404, detail="Project not found")
 
     token = secrets.token_urlsafe(24)
-    password_hash = pwd_context.hash(data.password) if data.password else None
+    password_hash = bcrypt.hashpw(data.password.encode(), bcrypt.gensalt()).decode() if data.password else None
 
     link = models.SharedLink(
         token=token,
@@ -95,6 +96,20 @@ def delete_link(
     link = db.query(models.SharedLink).filter(models.SharedLink.token == token).first()
     if not link:
         raise HTTPException(status_code=404, detail="Link not found")
+
+    if link.track_id:
+        owned = db.query(models.Track).join(models.Project).filter(
+            models.Track.id == link.track_id,
+            models.Project.user_id == user.id
+        ).first()
+    else:
+        owned = db.query(models.Project).filter(
+            models.Project.id == link.project_id,
+            models.Project.user_id == user.id
+        ).first()
+    if not owned:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
     db.delete(link)
     db.commit()
 
@@ -109,7 +124,7 @@ def verify_share_password(
 ):
     link = _get_link_or_404(token, db)
     if link.password_hash:
-        if not data.password or not pwd_context.verify(data.password, link.password_hash):
+        if not data.password or not bcrypt.checkpw(data.password.encode(), link.password_hash.encode()):
             raise HTTPException(status_code=403, detail="Wrong password")
     return {"ok": True, "has_password": bool(link.password_hash)}
 
@@ -128,7 +143,7 @@ def get_share_meta(token: str, db: Session = Depends(get_db)):
 @router.get("/s/{token}/track")
 def get_shared_track(token: str, password: Optional[str] = None, db: Session = Depends(get_db)):
     link = _get_link_or_404(token, db)
-    if link.password_hash and (not password or not pwd_context.verify(password, link.password_hash)):
+    if link.password_hash and (not password or not bcrypt.checkpw(password.encode(), link.password_hash.encode())):
         raise HTTPException(status_code=403, detail="Password required")
     if not link.track_id:
         raise HTTPException(status_code=400, detail="Link is for a project, not a track")
@@ -154,7 +169,7 @@ def stream_shared_track(
     db: Session = Depends(get_db)
 ):
     link = _get_link_or_404(token, db)
-    if link.password_hash and (not password or not pwd_context.verify(password, link.password_hash)):
+    if link.password_hash and (not password or not bcrypt.checkpw(password.encode(), link.password_hash.encode())):
         raise HTTPException(status_code=403, detail="Password required")
     if not link.track_id:
         raise HTTPException(status_code=400, detail="Link is for a project")
@@ -190,7 +205,7 @@ def stream_shared_track(
 @router.get("/s/{token}/project")
 def get_shared_project(token: str, password: Optional[str] = None, db: Session = Depends(get_db)):
     link = _get_link_or_404(token, db)
-    if link.password_hash and (not password or not pwd_context.verify(password, link.password_hash)):
+    if link.password_hash and (not password or not bcrypt.checkpw(password.encode(), link.password_hash.encode())):
         raise HTTPException(status_code=403, detail="Password required")
     if not link.project_id:
         raise HTTPException(status_code=400, detail="Link is for a track, not a project")
@@ -225,7 +240,7 @@ def stream_shared_project_track(
     db: Session = Depends(get_db)
 ):
     link = _get_link_or_404(token, db)
-    if link.password_hash and (not password or not pwd_context.verify(password, link.password_hash)):
+    if link.password_hash and (not password or not bcrypt.checkpw(password.encode(), link.password_hash.encode())):
         raise HTTPException(status_code=403, detail="Password required")
     if not link.project_id:
         raise HTTPException(status_code=400, detail="Link is for a track")
@@ -251,7 +266,7 @@ def stream_shared_project_track(
             "type": "listen",
             "token": link.token,
             "play_count": link.play_count,
-            "track_id": link.track_id,
+            "track_id": track_id,
             "track_name": track.name,
             "listen_event": {"timestamp": now, "ip_hash": ip_hash},
         })

@@ -105,6 +105,20 @@ class LinkAnalytics(BaseModel):
     class Config:
         from_attributes = True
 
+class StemOut(BaseModel):
+    id: int
+    track_id: int
+    name: str
+    volume: float
+    file_size: int
+    created_at: datetime
+    class Config:
+        from_attributes = True
+
+class StemUpdate(BaseModel):
+    name: Optional[str] = None
+    volume: Optional[float] = None
+
 class TrackOut(BaseModel):
     id: int
     project_id: int
@@ -113,9 +127,12 @@ class TrackOut(BaseModel):
     bpm: Optional[int] = None
     key_signature: Optional[str] = None
     lyrics: Optional[str] = None
+    project_name: Optional[str] = None
+    project_cover_image: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime]
     versions: List[TrackVersionOut] = []
+    stems: List[StemOut] = []
     class Config:
         from_attributes = True
 

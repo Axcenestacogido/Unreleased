@@ -8,7 +8,7 @@ from sqlalchemy import text
 from database import engine
 import models
 from events import event_bus
-from routes import auth, projects, tracks, share
+from routes import auth, projects, tracks, share, stems as stems_router
 from routes.events import router as events_router
 
 models.Base.metadata.create_all(bind=engine)
@@ -19,6 +19,7 @@ _migrations = [
     "ALTER TABLE tracks ADD COLUMN bpm INTEGER",
     "ALTER TABLE tracks ADD COLUMN key_signature VARCHAR",
     "ALTER TABLE tracks ADD COLUMN lyrics TEXT",
+    "CREATE TABLE IF NOT EXISTS stems (id INTEGER PRIMARY KEY, track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE, name VARCHAR NOT NULL, file_path VARCHAR NOT NULL, file_size INTEGER NOT NULL DEFAULT 0, volume REAL NOT NULL DEFAULT 1.0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
 ]
 with engine.connect() as _conn:
     for _sql in _migrations:
@@ -48,6 +49,7 @@ app.include_router(auth.router)
 app.include_router(projects.router)
 app.include_router(tracks.router)
 app.include_router(share.router)
+app.include_router(stems_router.router)
 app.include_router(events_router)
 
 # Serve frontend in production

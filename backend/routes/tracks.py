@@ -241,12 +241,20 @@ def _stream_version(track: models.Track, version_number: Optional[int], request:
 
     if range_header:
         # Range request for seek support
-        start, end = 0, file_size - 1
-        range_val = range_header.strip().replace("bytes=", "")
-        parts = range_val.split("-")
-        start = int(parts[0]) if parts[0] else 0
-        end = int(parts[1]) if parts[1] else file_size - 1
-        end = min(end, file_size - 1)
+        try:
+            range_val = range_header.strip().replace("bytes=", "")
+            parts = range_val.split("-")
+            start = int(parts[0]) if parts[0] else 0
+            end = int(parts[1]) if len(parts) > 1 and parts[1] else file_size - 1
+            end = min(end, file_size - 1)
+            if start < 0 or start >= file_size or start > end:
+                raise ValueError("invalid range")
+        except (ValueError, IndexError):
+            from fastapi.responses import Response
+            return Response(
+                status_code=416,
+                headers={"Content-Range": f"bytes */{file_size}"},
+            )
         length = end - start + 1
 
         def gen():
@@ -284,3 +292,42 @@ def _stream_version(track: models.Track, version_number: Optional[int], request:
             "Content-Length": str(file_size),
         }
     )
+
+
+@router.post("/{track_id}/analyze")
+def analyze_track(
+    track_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    track = get_track_or_404(track_id, user, db)
+    ver = max(track.versions, key=lambda v: v.version_number) if track.versions else None
+    if not ver:
+        raise HTTPException(status_code=400, detail="No audio file")
+
+    try:
+        import librosa
+        import numpy as np
+
+        y, sr = librosa.load(ver.file_path, sr=None, mono=True, duration=90)
+        tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+        bpm = round(float(tempo if np.isscalar(tempo) else tempo[0]))
+
+        chroma = librosa.feature.chroma_cqt(y=y, sr=sr)
+        chroma_mean = chroma.mean(axis=1)
+        note_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+        major_profile = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88]
+        minor_profile = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17]
+        major_scores = [float(np.corrcoef(np.roll(major_profile, i), chroma_mean)[0, 1]) for i in range(12)]
+        minor_scores = [float(np.corrcoef(np.roll(minor_profile, i), chroma_mean)[0, 1]) for i in range(12)]
+        best_major = int(np.argmax(major_scores))
+        best_minor = int(np.argmax(minor_scores))
+        key = (
+            f"{note_names[best_major]} major"
+            if major_scores[best_major] >= minor_scores[best_minor]
+            else f"{note_names[best_minor]} minor"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {e}")
+
+    return {"bpm": bpm, "key": key}

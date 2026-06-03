@@ -5,6 +5,7 @@ const PlayerContext = createContext(null)
 export function PlayerProvider({ children }) {
   const [currentTrack, setCurrentTrack] = useState(null)
   const [queue, setQueue] = useState([])
+  const [playing, setPlaying] = useState(false)
 
   useEffect(() => {
     if (!currentTrack || !('mediaSession' in navigator)) return
@@ -33,7 +34,7 @@ export function PlayerProvider({ children }) {
 
   return React.createElement(
     PlayerContext.Provider,
-    { value: { currentTrack, play, playNext, playPrev } },
+    { value: { currentTrack, play, playNext, playPrev, playing, setPlaying } },
     children
   )
 }
