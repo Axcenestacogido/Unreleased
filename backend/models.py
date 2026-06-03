@@ -1,5 +1,5 @@
 from sqlalchemy import (
-    Column, Integer, String, ForeignKey, DateTime, BigInteger, Boolean, Text
+    Column, Integer, String, ForeignKey, DateTime, BigInteger, Boolean, Text, Float
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -60,6 +60,7 @@ class Track(Base):
     folder = relationship("Folder", back_populates="tracks")
     versions = relationship("TrackVersion", back_populates="track", cascade="all, delete-orphan", order_by="TrackVersion.version_number")
     shared_links = relationship("SharedLink", back_populates="track", cascade="all, delete-orphan")
+    stems = relationship("Stem", back_populates="track", cascade="all, delete-orphan")
 
     @property
     def current_version(self):
@@ -82,6 +83,19 @@ class TrackVersion(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     track = relationship("Track", back_populates="versions")
+
+
+class Stem(Base):
+    __tablename__ = "stems"
+    id = Column(Integer, primary_key=True, index=True)
+    track_id = Column(Integer, ForeignKey("tracks.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String, nullable=False)
+    file_path = Column(String, nullable=False)
+    file_size = Column(BigInteger, nullable=False, default=0)
+    volume = Column(Float, nullable=False, default=1.0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    track = relationship("Track", back_populates="stems")
 
 
 class SharedLink(Base):

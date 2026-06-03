@@ -33,6 +33,7 @@ export function useAudioEngine() {
   const playerRef = useRef(null)
   const pitchShiftRef = useRef(null)
   const rafRef = useRef(null)
+  const stemPlayersRef = useRef([])
 
   const startContextTimeRef = useRef(0)
   const startOffsetRef = useRef(0)
@@ -60,11 +61,21 @@ export function useAudioEngine() {
     return t
   }
 
+  function _disposeStemPlayers() {
+    stemPlayersRef.current.forEach(({ player, gainNode }) => {
+      try { player.stop() } catch {}
+      try { player.dispose() } catch {}
+      try { gainNode.dispose() } catch {}
+    })
+    stemPlayersRef.current = []
+  }
+
   function _dispose() {
     cancelAnimationFrame(rafRef.current)
     try { playerRef.current?.stop() } catch {}
     playerRef.current?.dispose()
     pitchShiftRef.current?.dispose()
+    _disposeStemPlayers()
     playerRef.current = null
     pitchShiftRef.current = null
     setPlaying(false)
@@ -168,6 +179,11 @@ export function useAudioEngine() {
     playingRef.current = true
     setPlaying(true)
     playerRef.current.start(Tone.now(), startOffsetRef.current)
+    stemPlayersRef.current.forEach(({ player }) => {
+      try { player.stop() } catch {}
+      player.playbackRate = speedRef.current
+      player.start(Tone.now(), startOffsetRef.current)
+    })
     _startRaf()
   }, [])
 
@@ -178,6 +194,7 @@ export function useAudioEngine() {
     setPlaying(false)
     cancelAnimationFrame(rafRef.current)
     try { playerRef.current.stop() } catch {}
+    stemPlayersRef.current.forEach(({ player }) => { try { player.stop() } catch {} })
   }, [])
 
   const seek = useCallback((t) => {
@@ -188,6 +205,11 @@ export function useAudioEngine() {
     if (playingRef.current && playerRef.current) {
       try { playerRef.current.stop() } catch {}
       playerRef.current.start(Tone.now(), clamped)
+      stemPlayersRef.current.forEach(({ player }) => {
+        try { player.stop() } catch {}
+        player.playbackRate = speedRef.current
+        player.start(Tone.now(), clamped)
+      })
       _startRaf()
     }
   }, [])
@@ -248,10 +270,37 @@ export function useAudioEngine() {
     }
   }, [])
 
+  const loadStems = useCallback(async (stems) => {
+    _disposeStemPlayers()
+    const token = localStorage.getItem('token')
+    for (const stem of stems) {
+      try {
+        const res = await fetch(`/api/stems/${stem.id}/stream`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (!res.ok) continue
+        const arrayBuffer = await res.arrayBuffer()
+        const webAudioBuffer = await Tone.context.rawContext.decodeAudioData(arrayBuffer)
+        const toneBuffer = new Tone.ToneAudioBuffer(webAudioBuffer)
+        const gainNode = new Tone.Volume(stem.volume <= 0 ? -Infinity : 20 * Math.log10(stem.volume))
+        gainNode.toDestination()
+        const player = new Tone.Player(toneBuffer).connect(gainNode)
+        stemPlayersRef.current.push({ id: stem.id, player, gainNode })
+      } catch (e) {
+        console.error('Stem load error:', e)
+      }
+    }
+  }, [])
+
+  const setStemVolume = useCallback((stemId, volume) => {
+    const s = stemPlayersRef.current.find((s) => s.id === stemId)
+    if (s) s.gainNode.volume.value = volume <= 0 ? -Infinity : 20 * Math.log10(volume)
+  }, [])
+
   return {
     isLoading, peaks, duration, playing, currentTime,
     speed, pitch, loopEnabled, loopA, loopB,
-    loadTrack, play, pause, seek,
+    loadTrack, loadStems, setStemVolume, play, pause, seek,
     setSpeed, setPitch, setLoopPoints, setLoopEnabled,
   }
 }
