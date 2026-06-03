@@ -10,6 +10,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $Repo    = "https://github.com/axcenestacogido/unreleased.git"
+$Branch  = "claude/sleepy-ritchie-btYBt"
 $Dir     = "musicvault"
 $Port    = if ($env:PORT) { $env:PORT } else { "8080" }
 $InstDir = Join-Path $HOME $Dir   # always installs to C:\Users\<you>\musicvault
@@ -43,10 +44,12 @@ try { docker compose version | Out-Null } catch {
 # Clone or update
 if (Test-Path "$InstDir\.git") {
     Write-Host "  [1/4] Updating existing install in $InstDir ..."
-    git -C $InstDir pull --ff-only
+    git -C $InstDir fetch origin
+    git -C $InstDir checkout $Branch 2>$null
+    git -C $InstDir pull --ff-only origin $Branch
 } else {
     Write-Host "  [1/4] Cloning into $InstDir ..."
-    git clone $Repo $InstDir
+    git clone -b $Branch $Repo $InstDir
 }
 
 Set-Location $InstDir
@@ -67,9 +70,9 @@ ACCESS_TOKEN_EXPIRE_MINUTES=10080
     Write-Host "  [2/4] Using existing .env"
 }
 
-# Build
+# Build (--no-cache ensures fresh build when source files change)
 Write-Host "  [3/4] Building images (a few minutes the first time) ..."
-docker compose build --quiet
+docker compose build
 
 # Start
 Write-Host "  [4/4] Starting services ..."
