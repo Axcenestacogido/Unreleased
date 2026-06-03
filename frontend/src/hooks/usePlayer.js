@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect } from 'react'
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react'
 
 const PlayerContext = createContext(null)
 
@@ -32,10 +32,10 @@ export function PlayerProvider({ children }) {
     if (idx > 0) setCurrentTrack(queue[idx - 1])
   }, [currentTrack, queue])
 
-  return (
-    <PlayerContext.Provider value={{ currentTrack, play, playNext, playPrev }}>
-      {children}
-    </PlayerContext.Provider>
+  return React.createElement(
+    PlayerContext.Provider,
+    { value: { currentTrack, play, playNext, playPrev } },
+    children
   )
 }
 
