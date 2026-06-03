@@ -5,7 +5,6 @@ import {
 } from 'lucide-react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { usePlayer } from '../../hooks/usePlayer'
-import { useAudioEngine } from '../../hooks/useAudioEngine'
 import api from '../../api/client'
 import WaveCanvas from './WaveCanvas'
 
@@ -67,8 +66,7 @@ function IconBtn({ onClick, children, active, size = 32, title }) {
 }
 
 export default function Player() {
-  const { currentTrack, playNext, playPrev } = usePlayer()
-  const engine = useAudioEngine()
+  const { currentTrack, playNext, playPrev, engine } = usePlayer()
   const qc = useQueryClient()
 
   const [activeTab, setActiveTab] = useState('edit')
@@ -99,15 +97,12 @@ export default function Player() {
     }, 800)
   }
 
-  // Load track when it changes
+  // Reset loop state when track changes
   useEffect(() => {
     if (!currentTrack) return
     setLoopA(null)
     setLoopB(null)
     setLoopActive(false)
-    engine.loadTrack(currentTrack.id).then(() => {
-      engine.play(0)
-    })
   }, [currentTrack?.id])
 
   function togglePlay() {
