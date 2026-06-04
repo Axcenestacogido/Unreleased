@@ -35,7 +35,7 @@ export default function Login() {
   })
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-primary)', padding: 24 }}>
+    <div className="mv-page" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-primary)', padding: 24 }}>
       <div style={{ width: '100%', maxWidth: 320 }}>
         <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'var(--text-xl)', fontWeight: 600, letterSpacing: 'var(--tracking-display)', color: 'var(--text-primary)', marginBottom: 32, textAlign: 'center' }}>
           MusicVault

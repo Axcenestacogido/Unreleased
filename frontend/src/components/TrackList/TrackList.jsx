@@ -381,17 +381,18 @@ export default function TrackList({ projectId, folderId, project, onShare, onSha
           </div>
         )}
         {tracks.map((t, i) => (
-          <TrackRow
-            key={t.id}
-            track={t}
-            allTracks={tracks}
-            isActive={currentTrack?.id === t.id}
-            isPlaying={currentTrack?.id === t.id && playing}
-            onShare={onShare}
-            onNewVersion={setNewVersionTrack}
-            onMove={setMoveTrack}
-            index={i}
-          />
+          <div key={t.id} className="mv-item-in" style={{ '--i': i }}>
+            <TrackRow
+              track={t}
+              allTracks={tracks}
+              isActive={currentTrack?.id === t.id}
+              isPlaying={currentTrack?.id === t.id && playing}
+              onShare={onShare}
+              onNewVersion={setNewVersionTrack}
+              onMove={setMoveTrack}
+              index={i}
+            />
+          </div>
         ))}
       </div>
 

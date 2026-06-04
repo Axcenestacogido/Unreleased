@@ -235,10 +235,15 @@ export function useAudioEngine() {
     if (playerRef.current) {
       playerRef.current.loop = enabled
     }
-    // Reset time tracking origin when toggling loop off so position is accurate
-    if (!enabled && playingRef.current) {
-      startOffsetRef.current = _getDisplayTime()
+    // When disabling loop while playing, stop and restart at the wrapped position
+    // so the audio buffer source stays in sync with the display time (prevents doubling)
+    if (!enabled && playingRef.current && playerRef.current) {
+      const pos = _getDisplayTime()
+      startOffsetRef.current = pos
       startContextTimeRef.current = Tone.now()
+      try { playerRef.current.stop() } catch {}
+      playerRef.current.start(Tone.now(), pos)
+      _startRaf()
     }
   }, [])
 

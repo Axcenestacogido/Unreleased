@@ -155,6 +155,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
   const [mobileTab, setMobileTab] = useState(null)
   const [editSubTab, setEditSubTab] = useState('adjust')
   const [loopActive, setLoopActive] = useState(false)
+  const [loopPressing, setLoopPressing] = useState(false)
   const [loopA, setLoopA] = useState(null)
   const [loopB, setLoopB] = useState(null)
 
@@ -296,6 +297,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
     e.preventDefault()
     const a = engine.currentTime
     loopPressARef.current = a
+    setLoopPressing(true)
     setLoopA(a)
     setLoopB(null)
     engine.setLoopEnabled(false)
@@ -304,6 +306,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
 
   function handleLoopPressUp(e) {
     e.preventDefault()
+    setLoopPressing(false)
     const a = loopPressARef.current
     loopPressARef.current = null
     if (a === null) return
@@ -489,6 +492,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
             onPointerDown={handleLoopPressDown} onPointerUp={handleLoopPressUp}
             onPointerLeave={handleLoopPressUp}
             title="Hold to record A→B loop, tap to toggle"
+            className={loopPressing ? 'mv-loop-recording' : undefined}
             style={{
               width: 28, height: 28, borderRadius: '50%', border: 'none',
               background: loopActive ? 'var(--accent-subtle)' : 'transparent',
@@ -669,7 +673,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
       )
 
       return (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div className="mv-sheet" style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {/* Header: Cancel / title / Save */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px 6px', flexShrink: 0 }}>
             <button onClick={() => setMobileTab(null)} style={{ background: 'var(--bg-secondary)', border: 'none', borderRadius: 20, padding: '7px 16px', color: 'var(--text-primary)', fontSize: 15, fontWeight: 500, cursor: 'pointer' }}>
@@ -720,6 +724,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
             <button
               onPointerDown={handleLoopPressDown} onPointerUp={handleLoopPressUp}
               onPointerLeave={handleLoopPressUp}
+              className={loopPressing ? 'mv-loop-recording' : undefined}
               style={{
                 flex: 1, height: 52, borderRadius: 14, border: 'none',
                 background: loopActive ? 'var(--accent-subtle)' : 'var(--bg-secondary)',
@@ -844,7 +849,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
     })
 
     return (
-      <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div className="mv-sheet" style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', padding: '16px 20px 8px', flexShrink: 0 }}>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', lineHeight: 0, padding: 4 }}>
@@ -972,6 +977,7 @@ export default function Player({ isMobile = false }) {
     return (
       <div
         onClick={() => setExpanded(true)}
+        className="mv-bar-in"
         style={{
           position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 100,
           height: 64, background: 'var(--bg-elevated)', borderTop: '1px solid var(--border)',
