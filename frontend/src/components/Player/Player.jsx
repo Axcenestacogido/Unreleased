@@ -92,15 +92,15 @@ function VerticalFader({ value, onChange, onReset }) {
     >
       {/* Tick lines */}
       {Array.from({ length: 12 }).map((_, i) => (
-        <div key={i} style={{ position: 'absolute', left: 8, right: 8, top: `${(i / 11) * 100}%`, height: 1.5, borderRadius: 1, background: i / 11 >= pct / 100 ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.12)' }} />
+        <div key={i} style={{ position: 'absolute', left: 8, right: 8, top: `${(i / 11) * 100}%`, height: 1.5, borderRadius: 1, pointerEvents: 'none', background: i / 11 >= pct / 100 ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.12)' }} />
       ))}
       {/* Fader handle */}
-      <div style={{ position: 'absolute', top: `${pct}%`, left: 0, right: 0, transform: 'translateY(-50%)', height: 4, background: 'white', borderRadius: 2, boxShadow: '0 1px 6px rgba(0,0,0,0.5)' }} />
+      <div style={{ position: 'absolute', top: `${pct}%`, left: 0, right: 0, transform: 'translateY(-50%)', height: 4, background: 'white', borderRadius: 2, pointerEvents: 'none', boxShadow: '0 1px 6px rgba(0,0,0,0.5)' }} />
     </div>
   )
 }
 
-// Slider for the mobile edit view ÔÇö dark pill style with label + value
+// Slider for the mobile edit view — dark pill style with label + value
 function EditSlider({ label, value, display, min, max, onChange, onReset }) {
   const trackRef = useRef(null)
 
@@ -135,7 +135,7 @@ function EditSlider({ label, value, display, min, max, onChange, onReset }) {
           position: 'absolute', inset: 0, borderRadius: 4,
           background: 'repeating-linear-gradient(90deg, transparent 0, transparent calc(10% - 1px), rgba(255,255,255,0.12) calc(10% - 1px), rgba(255,255,255,0.12) 10%)',
         }} />
-        {/* Thumb ÔÇö vertical bar like the screenshot */}
+        {/* Thumb — vertical bar like the screenshot */}
         <div style={{
           position: 'absolute', left: `${pct}%`, transform: 'translateX(-50%)',
           width: 3, height: 22, background: '#fff', borderRadius: 2,
@@ -163,6 +163,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
   const [lyrics, setLyrics] = useState('')
   const [analyzing, setAnalyzing] = useState(false)
   const [separating, setSeparating] = useState(false)
+  const [stemVolumes, setStemVolumes] = useState({})
   const saveTimeout = useRef(null)
   const stemInputRef = useRef(null)
   const wasPlayingRef = useRef(false)
@@ -174,6 +175,12 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
     enabled: !!currentTrack,
     onSuccess: (data) => {
       if (data.length > 0 && separating) setSeparating(false)
+      // Sync query volumes into local state (don't overwrite in-progress drags)
+      setStemVolumes(prev => {
+        const next = { ...prev }
+        data.forEach(s => { if (next[s.id] === undefined) next[s.id] = s.volume })
+        return next
+      })
     },
   })
 
@@ -208,7 +215,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
     setLoopActive(false)
   }, [currentTrack?.id])
 
-  // Media Session ÔÇö lets OS keep audio alive when screen turns off
+  // Media Session — lets OS keep audio alive when screen turns off
   useEffect(() => {
     if (!('mediaSession' in navigator) || !currentTrack) return
     navigator.mediaSession.metadata = new MediaMetadata({
@@ -325,6 +332,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
   }
 
   async function handleStemVolumeChange(stem, volume) {
+    setStemVolumes(prev => ({ ...prev, [stem.id]: volume }))
     engine.setStemVolume(stem.id, volume)
     try {
       await api.patch(`/stems/${stem.id}`, { volume })
@@ -377,8 +385,8 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
           </span>
           <span className="mv-meta">
             {currentTrack.project_name || ''}
-            {bpm ? ` ┬À ${bpm} BPM` : ''}
-            {key ? ` ┬À ${key}` : ''}
+            {bpm ? ` · ${bpm} BPM` : ''}
+            {key ? ` · ${key}` : ''}
           </span>
         </div>
 
@@ -493,13 +501,13 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
             <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <span className="mv-label">BPM</span>
-                <input type="number" min="1" max="999" placeholder="ÔÇö" value={bpm}
+                <input type="number" min="1" max="999" placeholder="—" value={bpm}
                   onChange={e => { setBpm(e.target.value); const v = parseInt(e.target.value, 10); if (currentTrack) scheduleSave({ bpm: isNaN(v) ? null : v }) }}
                   style={inputStyle} />
               </div>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <span className="mv-label">KEY</span>
-                <input type="text" placeholder="C majorÔÇª" value={key}
+                <input type="text" placeholder="C major…" value={key}
                   onChange={e => { setKey(e.target.value); if (currentTrack) scheduleSave({ key_signature: e.target.value || null }) }}
                   style={inputStyle} />
               </div>
@@ -531,7 +539,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
                   {separating
                     ? <Loader2 size={11} strokeWidth={2} style={{ animation: 'spin 0.8s linear infinite' }} />
                     : <Scissors size={11} strokeWidth={2} />}
-                  {separating ? 'SeparatingÔÇª' : 'Auto'}
+                  {separating ? 'Separating…' : 'Auto'}
                 </button>
                 <button onClick={() => stemInputRef.current?.click()} style={{
                   display: 'flex', alignItems: 'center', gap: 4,
@@ -546,7 +554,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
 
               {separating && (
                 <span className="mv-meta" style={{ fontSize: 'var(--text-xs)' }}>
-                  AI separating vocals / drums / bass / otherÔÇª this can take several minutes.
+                  AI separating vocals / drums / bass / other… this can take several minutes.
                 </span>
               )}
 
@@ -561,7 +569,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
                       {stem.name}
                     </span>
                     <span className="mv-mono" style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', minWidth: 30, textAlign: 'right' }}>
-                      {Math.round(stem.volume * 100)}%
+                      {Math.round((stemVolumes[stem.id] ?? stem.volume) * 100)}%
                     </span>
                     <button onClick={() => handleDeleteStem(stem.id)} style={{
                       background: 'transparent', border: 'none', cursor: 'pointer',
@@ -571,7 +579,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
                     </button>
                   </div>
                   <Slider
-                    value={stem.volume} min={0} max={1} step={0.01}
+                    value={stemVolumes[stem.id] ?? stem.volume} min={0} max={1} step={0.01}
                     onChange={(v) => handleStemVolumeChange(stem, Math.round(v * 100) / 100)}
                     onReset={() => handleStemVolumeChange(stem, 1)}
                   />
@@ -584,7 +592,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
         {activeTab === 'lyrics' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, height: '100%' }}>
             <span className="mv-label">LYRICS</span>
-            <textarea placeholder="Paste or write lyrics hereÔÇª" value={lyrics}
+            <textarea placeholder="Paste or write lyrics here…" value={lyrics}
               onChange={e => { setLyrics(e.target.value); if (currentTrack) scheduleSave({ lyrics: e.target.value || null }) }}
               style={{ ...inputStyle, flex: 1, minHeight: 200, resize: 'vertical', lineHeight: 1.6, padding: '10px 12px' }}
             />
@@ -595,7 +603,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
     </div>
   )
 
-  // ÔöÇÔöÇ Mobile full-screen player ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+  // ── Mobile full-screen player ───────────────────────────────────────────────
   if (isMobile) {
     const cover = currentTrack.project_cover_image
 
@@ -608,7 +616,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
       }}>{children}</button>
     )
 
-    // ÔöÇÔöÇ Edit full-screen view ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+    // ── Edit full-screen view ──────────────────────────────────────────────
     if (mobileTab === 'edit') {
       const subTabBtn = (name, label) => (
         <button onClick={() => setEditSubTab(name)} style={{
@@ -652,7 +660,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
             </button>
           </div>
 
-          {/* Waveform ÔÇö tall */}
+          {/* Waveform — tall */}
           <div style={{ height: 160, flexShrink: 0 }}>
             {engine.isLoading
               ? <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div style={{ width: 18, height: 18, border: '2px solid var(--border-strong)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} /></div>
@@ -704,13 +712,13 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
                 <div style={{ display: 'flex', gap: 8 }}>
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 5 }}>
                     <span style={{ fontSize: 11, color: 'var(--text-muted)', letterSpacing: '0.08em', fontWeight: 600 }}>BPM</span>
-                    <input type="number" min="1" max="999" placeholder="ÔÇö" value={bpm}
+                    <input type="number" min="1" max="999" placeholder="—" value={bpm}
                       onChange={e => { setBpm(e.target.value); const v = parseInt(e.target.value, 10); scheduleSave({ bpm: isNaN(v) ? null : v }) }}
                       style={{ width: '100%', background: 'var(--bg-secondary)', border: 'none', borderRadius: 10, padding: '10px 12px', fontSize: 15, color: 'var(--text-primary)', outline: 'none' }} />
                   </div>
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 5 }}>
                     <span style={{ fontSize: 11, color: 'var(--text-muted)', letterSpacing: '0.08em', fontWeight: 600 }}>KEY</span>
-                    <input type="text" placeholder="C majorÔÇª" value={key}
+                    <input type="text" placeholder="C major…" value={key}
                       onChange={e => { setKey(e.target.value); scheduleSave({ key_signature: e.target.value || null }) }}
                       style={{ width: '100%', background: 'var(--bg-secondary)', border: 'none', borderRadius: 10, padding: '10px 12px', fontSize: 15, color: 'var(--text-primary)', outline: 'none' }} />
                   </div>
@@ -728,7 +736,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
                   </div>
                   <button onClick={separating ? undefined : handleSeparate} disabled={separating} style={{ background: '#fff', border: 'none', borderRadius: 20, padding: '10px 20px', fontSize: 15, fontWeight: 600, color: '#000', cursor: separating ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                     {separating ? <Loader2 size={14} strokeWidth={2} style={{ animation: 'spin 0.8s linear infinite' }} /> : null}
-                    {separating ? 'GeneratingÔÇª' : 'Generate'}
+                    {separating ? 'Generating…' : 'Generate'}
                   </button>
                 </div>
                 <input ref={stemInputRef} type="file" accept="audio/*" style={{ display: 'none' }} onChange={handleStemUpload} />
@@ -752,12 +760,12 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
                     stems.map(stem => (
                       <div key={stem.id} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, background: 'var(--bg-secondary)', borderRadius: 16, padding: '16px 8px 12px', minHeight: 180 }}>
                         <VerticalFader
-                          value={stem.volume}
+                          value={stemVolumes[stem.id] ?? stem.volume}
                           onChange={v => handleStemVolumeChange(stem, Math.round(v * 100) / 100)}
                           onReset={() => handleStemVolumeChange(stem, 1)}
                         />
                         <div style={{ fontSize: 12, color: 'var(--text-primary)', letterSpacing: '0.03em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{stem.name}</div>
-                        <div style={{ width: 6, height: 6, borderRadius: '50%', background: stem.volume > 0 ? 'var(--accent)' : 'rgba(255,255,255,0.2)' }} />
+                        <div style={{ width: 6, height: 6, borderRadius: '50%', background: (stemVolumes[stem.id] ?? stem.volume) > 0 ? 'var(--accent)' : 'rgba(255,255,255,0.2)' }} />
                       </div>
                     ))
                   )}
@@ -765,7 +773,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
 
                 {separating && (
                   <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
-                    AI separating vocals / drums / bass / otherÔÇª may take a few minutes.
+                    AI separating vocals / drums / bass / other… may take a few minutes.
                   </div>
                 )}
               </div>
@@ -781,7 +789,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
       )
     }
 
-    // ÔöÇÔöÇ Normal player (cover + transport) ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
+    // ── Normal player (cover + transport) ─────────────────────────────────
     const tabBtnStyle = (active) => ({
       display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
       background: 'transparent', border: 'none', cursor: 'pointer',
@@ -826,7 +834,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
           {mobileTab === 'notes' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, height: '100%' }}>
               <textarea
-                placeholder="Letras / notasÔÇª"
+                placeholder="Letras / notas…"
                 value={lyrics}
                 onChange={e => { setLyrics(e.target.value); if (currentTrack) scheduleSave({ lyrics: e.target.value || null }) }}
                 style={{ flex: 1, minHeight: 160, background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px', fontSize: 15, color: 'var(--text-primary)', outline: 'none', resize: 'none', lineHeight: 1.6, fontFamily: 'var(--font-ui)' }}
@@ -885,7 +893,7 @@ export default function Player({ isMobile = false }) {
   const engine = useAudioEngine()
   const [expanded, setExpanded] = useState(false)
 
-  // Load and auto-play whenever the selected track changes ÔÇö runs regardless
+  // Load and auto-play whenever the selected track changes — runs regardless
   // of whether the full player is expanded (fixes mobile mini-bar not playing)
   useEffect(() => {
     if (!currentTrack) return
