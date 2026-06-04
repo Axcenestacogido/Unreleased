@@ -40,6 +40,9 @@
   ::-webkit-scrollbar-thumb{background:rgba(127,127,127,0.2);border-radius:2px;}
   input,button,select,textarea{font-family:inherit;}
   textarea{resize:vertical;}
+  /* Prevent text selection on touch — buttons/sliders should never highlight text */
+  *{-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;}
+  input,textarea,[contenteditable]{-webkit-user-select:text;user-select:text;}
 }
 
 /* Semantic typography */
