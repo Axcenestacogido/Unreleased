@@ -48,8 +48,11 @@ export function useSSE() {
         break
 
       case 'stems_ready':
+        qc.invalidateQueries({ queryKey: ['stems', event.track_id] })
+        break
       case 'stems_error':
         qc.invalidateQueries({ queryKey: ['stems', event.track_id] })
+        window.dispatchEvent(new CustomEvent('mv:stems_error', { detail: event }))
         break
     }
   }

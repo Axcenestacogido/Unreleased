@@ -179,6 +179,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
   const [lyrics, setLyrics] = useState('')
   const [analyzing, setAnalyzing] = useState(false)
   const [separating, setSeparating] = useState(false)
+  const [stemError, setStemError] = useState(null)
   const [stemVolumes, setStemVolumes] = useState({})
   const saveTimeout = useRef(null)
   const stemInputRef = useRef(null)
@@ -208,6 +209,19 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
     setKey(currentTrack.key_signature || '')
     setLyrics(currentTrack.lyrics || '')
     setSeparating(false)
+    setStemError(null)
+  }, [currentTrack?.id])
+
+  // Stop spinner and surface error message when demucs fails
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.detail.track_id === currentTrack?.id) {
+        setSeparating(false)
+        setStemError(e.detail.message || 'Separation failed')
+      }
+    }
+    window.addEventListener('mv:stems_error', handler)
+    return () => window.removeEventListener('mv:stems_error', handler)
   }, [currentTrack?.id])
 
   // Sync stems to audio engine whenever they change
@@ -352,10 +366,12 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
 
   async function handleSeparate() {
     setSeparating(true)
+    setStemError(null)
     try {
       await api.post(`/tracks/${currentTrack.id}/separate`)
     } catch (e) {
       setSeparating(false)
+      setStemError(e.response?.data?.detail || 'Failed to start separation')
       console.error('Separation failed:', e)
     }
   }
@@ -617,7 +633,13 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
                 </span>
               )}
 
-              {!separating && stems.length === 0 && (
+              {stemError && !separating && (
+                <span style={{ fontSize: 'var(--text-xs)', color: '#e05252' }}>
+                  Error: {stemError}
+                </span>
+              )}
+
+              {!separating && !stemError && stems.length === 0 && (
                 <span className="mv-meta" style={{ fontSize: 'var(--text-xs)' }}>No stems. Use Auto to separate with AI, or Manual to upload.</span>
               )}
 
@@ -843,6 +865,12 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
                 {separating && (
                   <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
                     AI separating vocals / drums / bass / other… may take a few minutes.
+                  </div>
+                )}
+
+                {stemError && !separating && (
+                  <div style={{ fontSize: 12, color: '#e05252', padding: '4px 0' }}>
+                    Error: {stemError}
                   </div>
                 )}
               </div>
