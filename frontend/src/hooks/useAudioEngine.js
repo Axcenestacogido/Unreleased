@@ -74,6 +74,7 @@ export function useAudioEngine() {
   }
 
   function _startStemPlayers(offset) {
+    Tone.context.resume().catch(() => {})
     const safe = Math.max(0, Math.min(offset, durationRef.current - 0.05))
     Object.values(stemPlayersRef.current).forEach(({ player }) => {
       try { player.stop() } catch {}
@@ -85,7 +86,7 @@ export function useAudioEngine() {
     Object.values(stemPlayersRef.current).forEach(({ player, gainNode }) => {
       try { player.stop() } catch {}
       try { player.dispose() } catch {}
-      try { gainNode.disconnect() } catch {}
+      try { gainNode.dispose() } catch {}
     })
     stemPlayersRef.current = {}
     stemsActiveRef.current = false
@@ -313,7 +314,7 @@ export function useAudioEngine() {
     _disposeStemPlayers()
 
     const token = localStorage.getItem('token')
-    const rawCtx = Tone.context.rawContext
+    const rawCtx = Tone.context.rawContext // needed for decodeAudioData
 
     const results = await Promise.all(
       stems.map(async (stem) => {
@@ -329,11 +330,7 @@ export function useAudioEngine() {
           const webBuf = await rawCtx.decodeAudioData(buf)
           const toneBuf = new Tone.ToneAudioBuffer(webBuf)
 
-          // Use a raw GainNode for volume — avoids Tone.js abstraction issues
-          const gainNode = rawCtx.createGain()
-          gainNode.gain.value = Math.max(0, Math.min(1, stem.volume))
-          gainNode.connect(rawCtx.destination)
-
+          const gainNode = new Tone.Gain(Math.max(0, Math.min(1, stem.volume))).toDestination()
           const player = new Tone.Player(toneBuf).connect(gainNode)
           player.playbackRate = speedRef.current
           player.loop = loopEnabledRef.current
@@ -373,39 +370,54 @@ export function useAudioEngine() {
   }, [])
 
   useEffect(() => {
-    // Build a tiny silent WAV blob URL to keep the iOS audio session alive
-    // when the screen locks in PWA mode. A looping native <audio> element
-    // prevents iOS from suspending the Web Audio Context.
+    // iOS PWA background audio:
+    // A looping <audio> element bridged into the Web Audio graph via
+    // createMediaElementSource keeps iOS from treating the AudioContext as
+    // an "ambient" (screen-off-suspended) session. volume=0 alone is NOT
+    // enough — iOS ignores muted elements for session classification purposes.
     let silentAudio = null
     let silentUrl = null
 
     function _startSilentAudio() {
       if (silentAudio) return
       try {
-        const sr = 8000, n = 800 // 100 ms of 8kHz 8-bit mono silence
+        const rawCtx = Tone.context.rawContext
+        // 1-second silent 8kHz 8-bit mono WAV
+        const sr = 8000, n = 8000
         const buf = new ArrayBuffer(44 + n)
-        const v = new DataView(buf)
-        v.setUint32(0, 0x52494646, false)   // "RIFF"
-        v.setUint32(4, 36 + n, true)
-        v.setUint32(8, 0x57415645, false)   // "WAVE"
-        v.setUint32(12, 0x666D7420, false)  // "fmt "
-        v.setUint32(16, 16, true)
-        v.setUint16(20, 1, true)            // PCM
-        v.setUint16(22, 1, true)            // mono
-        v.setUint32(24, sr, true)
-        v.setUint32(28, sr, true)
-        v.setUint16(32, 1, true)
-        v.setUint16(34, 8, true)
-        v.setUint32(36, 0x64617461, false)  // "data"
-        v.setUint32(40, n, true)
-        new Uint8Array(buf, 44).fill(128)   // 128 = silence for unsigned 8-bit
+        const dv = new DataView(buf)
+        dv.setUint32(0,  0x52494646, false) // "RIFF"
+        dv.setUint32(4,  36 + n,     true)
+        dv.setUint32(8,  0x57415645, false) // "WAVE"
+        dv.setUint32(12, 0x666D7420, false) // "fmt "
+        dv.setUint32(16, 16, true)
+        dv.setUint16(20, 1,  true)  // PCM
+        dv.setUint16(22, 1,  true)  // mono
+        dv.setUint32(24, sr, true)  // sample rate
+        dv.setUint32(28, sr, true)  // byte rate
+        dv.setUint16(32, 1,  true)  // block align
+        dv.setUint16(34, 8,  true)  // bits per sample
+        dv.setUint32(36, 0x64617461, false) // "data"
+        dv.setUint32(40, n,  true)
+        new Uint8Array(buf, 44).fill(128) // unsigned 8-bit silence = 128
+
         silentUrl = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }))
         silentAudio = document.createElement('audio')
         silentAudio.src = silentUrl
         silentAudio.loop = true
-        silentAudio.volume = 0
+
+        // Bridge the audio element into the Web Audio API.
+        // iOS sees a MediaElementSourceNode as "active media" and keeps
+        // the AudioContext running when the screen locks.
+        try {
+          const src = rawCtx.createMediaElementSource(silentAudio)
+          src.connect(rawCtx.destination)
+        } catch {}
+
         silentAudio.play().catch(() => {})
-      } catch {}
+      } catch (e) {
+        console.warn('keepalive audio init failed:', e)
+      }
     }
 
     const unlock = async () => {
