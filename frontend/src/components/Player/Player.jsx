@@ -295,13 +295,8 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
   // Press-and-hold loop recording: down = set A, up = set B and activate
   function handleLoopPressDown(e) {
     e.preventDefault()
-    const a = engine.currentTime
-    loopPressARef.current = a
+    loopPressARef.current = engine.currentTime
     setLoopPressing(true)
-    setLoopA(a)
-    setLoopB(null)
-    engine.setLoopEnabled(false)
-    setLoopActive(false)
   }
 
   function handleLoopPressUp(e) {
@@ -312,13 +307,13 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
     if (a === null) return
     const b = engine.currentTime
     if (b - a > 0.3) {
-      // Long press: commit region A→B
+      // Long press: commit region A→B and activate
       setLoopA(a); setLoopB(b)
       engine.setLoopPoints(a, b)
       engine.setLoopEnabled(true)
       setLoopActive(true)
     } else {
-      // Quick tap: toggle loop on/off using last known region
+      // Quick tap: toggle loop on/off
       toggleLoop()
     }
   }
