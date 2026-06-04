@@ -88,14 +88,22 @@ function VerticalFader({ value, onChange, onReset }) {
     <div ref={trackRef}
       onPointerDown={handlePointerDown} onPointerMove={handlePointerMove}
       onDoubleClick={onReset}
-      style={{ flex: 1, position: 'relative', cursor: 'ns-resize', touchAction: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center' }}
+      style={{ flex: 1, minHeight: 120, position: 'relative', cursor: 'ns-resize', touchAction: 'none' }}
     >
-      {/* Tick lines */}
+      {/* Tick lines (rallas) */}
       {Array.from({ length: 12 }).map((_, i) => (
-        <div key={i} style={{ position: 'absolute', left: 8, right: 8, top: `${(i / 11) * 100}%`, height: 1.5, borderRadius: 1, pointerEvents: 'none', background: i / 11 >= pct / 100 ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.12)' }} />
+        <div key={i} style={{
+          position: 'absolute', left: 10, right: 10,
+          top: `${(i / 11) * 100}%`, height: 1.5, borderRadius: 1, pointerEvents: 'none',
+          background: i / 11 >= pct / 100 ? 'rgba(255,255,255,0.60)' : 'rgba(255,255,255,0.20)',
+        }} />
       ))}
       {/* Fader handle */}
-      <div style={{ position: 'absolute', top: `${pct}%`, left: 0, right: 0, transform: 'translateY(-50%)', height: 4, background: 'white', borderRadius: 2, pointerEvents: 'none', boxShadow: '0 1px 6px rgba(0,0,0,0.5)' }} />
+      <div style={{
+        position: 'absolute', top: `${pct}%`, left: 0, right: 0,
+        transform: 'translateY(-50%)', height: 4, background: 'white',
+        borderRadius: 2, pointerEvents: 'none', boxShadow: '0 1px 8px rgba(0,0,0,0.6)',
+      }} />
     </div>
   )
 }
@@ -747,9 +755,9 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
                     /* Placeholder cards when no stems */
                     ['vocals', 'drums', 'bass', 'other'].map(name => (
                       <div key={name} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, background: 'var(--bg-secondary)', borderRadius: 16, padding: '16px 8px 12px', minHeight: 180 }}>
-                        <div style={{ flex: 1, width: '100%', position: 'relative' }}>
+                        <div style={{ flex: 1, minHeight: 120, width: '100%', position: 'relative' }}>
                           {Array.from({ length: 12 }).map((_, i) => (
-                            <div key={i} style={{ position: 'absolute', left: 8, right: 8, top: `${(i / 11) * 100}%`, height: 1.5, borderRadius: 1, background: 'rgba(255,255,255,0.08)' }} />
+                            <div key={i} style={{ position: 'absolute', left: 10, right: 10, top: `${(i / 11) * 100}%`, height: 1.5, borderRadius: 1, background: 'rgba(255,255,255,0.18)' }} />
                           ))}
                         </div>
                         <div style={{ fontSize: 12, color: 'var(--text-muted)', letterSpacing: '0.03em' }}>{name}</div>
