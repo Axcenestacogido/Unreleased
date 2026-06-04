@@ -38,7 +38,6 @@ export function useAudioEngine() {
 
   const playerRef = useRef(null)
   const pitchShiftRef = useRef(null)
-  const masterGainRef = useRef(null)   // mutes main track when stems are active
   const rafRef = useRef(null)
 
   // Stem players: { [stemId]: { player: Tone.Player, volNode: Tone.Volume } }
@@ -101,10 +100,8 @@ export function useAudioEngine() {
     try { playerRef.current?.stop() } catch {}
     playerRef.current?.dispose()
     pitchShiftRef.current?.dispose()
-    masterGainRef.current?.dispose()
     playerRef.current = null
     pitchShiftRef.current = null
-    masterGainRef.current = null
     _disposeStemPlayers()
     setPlaying(false)
     playingRef.current = false
@@ -159,13 +156,14 @@ export function useAudioEngine() {
       setPeaks(extractPeaks(webAudioBuffer))
 
       const toneBuffer = new Tone.ToneAudioBuffer(webAudioBuffer)
-      // Chain: player → pitchShift → masterGain → output
-      // masterGain is set to -Infinity when stems are active so only stems are heard
-      const masterGain = new Tone.Volume(0).toDestination()
-      const pitchShift = new Tone.PitchShift(0).connect(masterGain)
+      // Original chain: player → pitchShift → output
+      // When stems are active we set player.mute = true so only stems are heard
+      const pitchShift = new Tone.PitchShift(0).toDestination()
       pitchShift.wet.value = 1
       const player = new Tone.Player(toneBuffer).connect(pitchShift)
       player.playbackRate = 1
+      // Apply mute immediately if stems are already loaded for this session
+      player.mute = stemsActiveRef.current
 
       player.onstop = () => {
         if (playingRef.current) {
@@ -181,7 +179,6 @@ export function useAudioEngine() {
       }
 
       pitchShiftRef.current = pitchShift
-      masterGainRef.current = masterGain
       playerRef.current = player
       setLoadedTrackId(trackId)
     } catch (err) {
@@ -243,7 +240,6 @@ export function useAudioEngine() {
     speedRef.current = newSpeed
     setSpeedState(newSpeed)
     if (playerRef.current) playerRef.current.playbackRate = newSpeed
-    // Sync speed to all stem players
     Object.values(stemPlayersRef.current).forEach(({ player }) => {
       player.playbackRate = newSpeed
     })
@@ -281,7 +277,6 @@ export function useAudioEngine() {
     Object.values(stemPlayersRef.current).forEach(({ player }) => {
       player.loop = enabled
     })
-    // When disabling loop while playing, resync audio to the wrapped display position
     if (!enabled && playingRef.current && playerRef.current) {
       const pos = _getDisplayTime()
       startOffsetRef.current = pos
@@ -298,8 +293,8 @@ export function useAudioEngine() {
   const loadStems = useCallback(async (stems) => {
     if (!stems || stems.length === 0) {
       _disposeStemPlayers()
-      // Unmute main track
-      if (masterGainRef.current) masterGainRef.current.volume.value = 0
+      // Unmute main player
+      if (playerRef.current) playerRef.current.mute = false
       return
     }
 
@@ -354,8 +349,8 @@ export function useAudioEngine() {
     stemsActiveRef.current = true
     loadedStemIdsRef.current = newIds
 
-    // Mute main track — stems provide the audio
-    if (masterGainRef.current) masterGainRef.current.volume.value = -Infinity
+    // Mute main player — stems provide the audio
+    if (playerRef.current) playerRef.current.mute = true
 
     // If already playing, start stem players from current position
     if (playingRef.current) {
