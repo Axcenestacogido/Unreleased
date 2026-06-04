@@ -86,13 +86,6 @@ export function useAudioEngine() {
     })
   }
 
-  // Mute main player when stems are loaded (stems carry the full mix)
-  function _syncMainVolume() {
-    if (!playerRef.current) return
-    const hasStems = Object.keys(stemPlayersRef.current).length > 0
-    playerRef.current.volume.value = hasStems ? -Infinity : 0
-  }
-
   function _dispose() {
     cancelAnimationFrame(rafRef.current)
     _markManualStop()
@@ -210,8 +203,6 @@ export function useAudioEngine() {
 
       pitchShiftRef.current = pitchShift
       playerRef.current = player
-      // Restore volume based on whether stems are already loaded
-      _syncMainVolume()
       setLoadedTrackId(trackId)
     } catch (err) {
       console.error('Audio load error:', err)
@@ -343,6 +334,12 @@ export function useAudioEngine() {
       }
     }
 
+    // Mute/unmute main player immediately based on whether stems will be present.
+    // Do this BEFORE loading so the main track is already silent when stems start playing.
+    if (playerRef.current) {
+      playerRef.current.volume.value = stems.length > 0 ? -Infinity : 0
+    }
+
     // Load new stems (ones not already loaded)
     const toLoad = stems.filter(s => !currentIds.has(s.id))
 
@@ -377,8 +374,6 @@ export function useAudioEngine() {
       }))
     }
 
-    // Mute/unmute main player based on whether any stems are loaded
-    _syncMainVolume()
   }, [])
 
   const setStemVolume = useCallback((stemId, volume) => {
