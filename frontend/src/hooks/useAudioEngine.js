@@ -42,6 +42,9 @@ export function useAudioEngine() {
   const stemPlayersRef = useRef({})
   // Prevents onstop from triggering loop restart on manual stops (seek/pause/dispose)
   const manualStopRef = useRef(false)
+  // Set to true when loadStems is called with stems present, even before playerRef exists.
+  // Lets loadTrack mute the player immediately if stems were pre-loaded (race condition guard).
+  const stemsShouldMuteRef = useRef(false)
 
   const startContextTimeRef = useRef(0)
   const startOffsetRef = useRef(0)
@@ -99,6 +102,7 @@ export function useAudioEngine() {
       p.dispose()
     })
     stemPlayersRef.current = {}
+    stemsShouldMuteRef.current = false
     setPlaying(false)
     playingRef.current = false
     setCurrentTime(0)
@@ -203,6 +207,11 @@ export function useAudioEngine() {
 
       pitchShiftRef.current = pitchShift
       playerRef.current = player
+      // Race condition: loadStems may have run while playerRef was null.
+      // stemsShouldMuteRef captures that intent so we mute immediately.
+      if (stemsShouldMuteRef.current || Object.keys(stemPlayersRef.current).length > 0) {
+        player.volume.value = -Infinity
+      }
       setLoadedTrackId(trackId)
     } catch (err) {
       console.error('Audio load error:', err)
@@ -277,8 +286,33 @@ export function useAudioEngine() {
   const setPitch = useCallback((semitones) => {
     pitchValueRef.current = semitones
     setPitchState(semitones)
-    if (pitchShiftRef.current) {
-      pitchShiftRef.current.pitch = semitones - 12 * Math.log2(speedRef.current)
+    if (!playerRef.current || !pitchShiftRef.current) return
+
+    const wasPlaying = playingRef.current
+    const pos = wasPlaying ? _getDisplayTime() : startOffsetRef.current
+
+    // Stop first to prevent old granular grains mixing with the new pitch
+    if (wasPlaying) {
+      _markManualStop()
+      try { playerRef.current.stop() } catch {}
+      _stopStemPlayers()
+    }
+
+    // Recreate PitchShift: merely updating .pitch leaves old grains playing (doubling)
+    try { playerRef.current.disconnect() } catch {}
+    try { pitchShiftRef.current.disconnect(); pitchShiftRef.current.dispose() } catch {}
+    const pitchShift = new Tone.PitchShift(semitones - 12 * Math.log2(speedRef.current)).toDestination()
+    pitchShift.wet.value = 1
+    playerRef.current.connect(pitchShift)
+    pitchShiftRef.current = pitchShift
+
+    if (wasPlaying) {
+      startOffsetRef.current = Math.max(0, Math.min(pos, durationRef.current - 0.05))
+      const now = Tone.now()
+      startContextTimeRef.current = now
+      try { playerRef.current.start(now, startOffsetRef.current) } catch {}
+      _startStemPlayers(now, startOffsetRef.current)
+      _startRaf()
     }
   }, [])
 
@@ -381,8 +415,11 @@ export function useAudioEngine() {
       }
     }
 
+    // Signal mute intent before any async work. loadTrack checks this ref
+    // so it can mute immediately even if it finishes before stems are added to stemPlayersRef.
+    stemsShouldMuteRef.current = stems.length > 0
+
     // Mute/unmute main player immediately based on whether stems will be present.
-    // Do this BEFORE loading so the main track is already silent when stems start playing.
     if (playerRef.current) {
       playerRef.current.volume.value = stems.length > 0 ? -Infinity : 0
     }
@@ -419,6 +456,11 @@ export function useAudioEngine() {
           console.error(`Stem ${stem.id} load error:`, err)
         }
       }))
+
+      // Re-apply mute after loading in case loadTrack completed during our async work
+      if (playerRef.current) {
+        playerRef.current.volume.value = stems.length > 0 ? -Infinity : 0
+      }
     }
 
   }, [])
