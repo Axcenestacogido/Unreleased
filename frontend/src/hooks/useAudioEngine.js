@@ -301,15 +301,62 @@ export function useAudioEngine() {
     }
   }, [])
 
-  // Resume AudioContext when the app returns to foreground (mobile background suspend)
+  // PWA background audio: keep audio session alive through screen lock.
+  // iOS only continues audio for HTML5 <audio> elements, not Web Audio API alone.
+  // We generate a 1-second silent WAV as a blob URL and loop it at near-zero volume.
+  // Once the user first interacts, this registers an active audio session so iOS
+  // doesn't suspend the Tone.js AudioContext when the screen locks.
   useEffect(() => {
+    let silentAudio = null
+    let blobUrl = null
+
+    const startKeepAlive = () => {
+      if (silentAudio) return
+      // Build a minimal 1s silent WAV (8000Hz, 8-bit, mono) programmatically
+      const sampleRate = 8000
+      const numSamples = sampleRate
+      const dataSize = numSamples // 1 byte per sample (8-bit)
+      const buf = new ArrayBuffer(44 + dataSize)
+      const v = new DataView(buf)
+      const str = (off, s) => { for (let i = 0; i < s.length; i++) v.setUint8(off + i, s.charCodeAt(i)) }
+      str(0, 'RIFF'); v.setUint32(4, 36 + dataSize, true); str(8, 'WAVE')
+      str(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true)
+      v.setUint16(22, 1, true); v.setUint32(24, sampleRate, true)
+      v.setUint32(28, sampleRate, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true)
+      str(36, 'data'); v.setUint32(40, dataSize, true)
+      // 8-bit PCM silence = 128 (midpoint of unsigned range)
+      new Uint8Array(buf).fill(128, 44)
+      blobUrl = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }))
+      silentAudio = new Audio(blobUrl)
+      silentAudio.loop = true
+      silentAudio.volume = 0.001
+      silentAudio.play().catch(() => {})
+      document.removeEventListener('touchstart', startKeepAlive)
+      document.removeEventListener('mousedown', startKeepAlive)
+    }
+
+    // Resume AudioContext when returning to foreground
     const handleVisibility = () => {
       if (!document.hidden && Tone.context.state !== 'running') {
         Tone.context.resume()
       }
     }
+    // Also resume on pageshow (iOS fires this when returning from background)
+    const handlePageShow = () => Tone.context.state !== 'running' && Tone.context.resume()
+
+    document.addEventListener('touchstart', startKeepAlive, { passive: true })
+    document.addEventListener('mousedown', startKeepAlive)
     document.addEventListener('visibilitychange', handleVisibility)
-    return () => document.removeEventListener('visibilitychange', handleVisibility)
+    window.addEventListener('pageshow', handlePageShow)
+
+    return () => {
+      document.removeEventListener('touchstart', startKeepAlive)
+      document.removeEventListener('mousedown', startKeepAlive)
+      document.removeEventListener('visibilitychange', handleVisibility)
+      window.removeEventListener('pageshow', handlePageShow)
+      if (silentAudio) { silentAudio.pause(); silentAudio.src = '' }
+      if (blobUrl) URL.revokeObjectURL(blobUrl)
+    }
   }, [])
 
   useEffect(() => {
