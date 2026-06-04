@@ -203,9 +203,9 @@ export function useAudioEngine() {
     speedRef.current = newSpeed
     setSpeedState(newSpeed)
     if (playerRef.current) playerRef.current.playbackRate = newSpeed
-    if (pitchShiftRef.current) {
-      pitchShiftRef.current.pitch = pitchValueRef.current - 12 * Math.log2(newSpeed)
-    }
+    // Pitch and speed are independent: changing speed does not adjust pitchShift.
+    // This avoids granular-synthesis artefacts (audio doubling) caused by
+    // triggering PitchShift parameter changes on every speed-slider frame.
   }, [])
 
   const setPitch = useCallback((semitones) => {
@@ -243,9 +243,16 @@ export function useAudioEngine() {
   }, [])
 
   useEffect(() => {
+    // Unlock AudioContext on the very first user gesture so it is already
+    // running by the time loadTrack/play are called asynchronously.
+    const unlock = () => Tone.start()
+    document.addEventListener('click', unlock, { once: true })
+    document.addEventListener('touchstart', unlock, { once: true, passive: true })
     return () => {
       cancelAnimationFrame(rafRef.current)
       _dispose()
+      document.removeEventListener('click', unlock)
+      document.removeEventListener('touchstart', unlock)
     }
   }, [])
 

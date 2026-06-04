@@ -167,6 +167,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
   const saveTimeout = useRef(null)
   const stemInputRef = useRef(null)
   const wasPlayingRef = useRef(false)
+  const loopPressARef = useRef(null)
 
   // Fetch stems via query so SSE invalidation triggers a refresh
   const { data: stems = [] } = useQuery({
@@ -287,6 +288,35 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
       }
     } else {
       setLoopA(null); setLoopB(null)
+    }
+  }
+
+  // Press-and-hold loop recording: down = set A, up = set B and activate
+  function handleLoopPressDown(e) {
+    e.preventDefault()
+    const a = engine.currentTime
+    loopPressARef.current = a
+    setLoopA(a)
+    setLoopB(null)
+    engine.setLoopEnabled(false)
+    setLoopActive(false)
+  }
+
+  function handleLoopPressUp(e) {
+    e.preventDefault()
+    const a = loopPressARef.current
+    loopPressARef.current = null
+    if (a === null) return
+    const b = engine.currentTime
+    if (b - a > 0.3) {
+      // Long press: commit region A→B
+      setLoopA(a); setLoopB(b)
+      engine.setLoopPoints(a, b)
+      engine.setLoopEnabled(true)
+      setLoopActive(true)
+    } else {
+      // Quick tap: toggle loop on/off using last known region
+      toggleLoop()
     }
   }
 
@@ -455,9 +485,19 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
             </button>
           )}
           <div style={{ flex: 1 }} />
-          <IconBtn onClick={toggleLoop} active={loopActive} size={28} title="Loop">
+          <button
+            onPointerDown={handleLoopPressDown} onPointerUp={handleLoopPressUp}
+            onPointerLeave={handleLoopPressUp}
+            title="Hold to record A→B loop, tap to toggle"
+            style={{
+              width: 28, height: 28, borderRadius: '50%', border: 'none',
+              background: loopActive ? 'var(--accent-subtle)' : 'transparent',
+              color: loopActive ? 'var(--text-primary)' : 'var(--text-secondary)',
+              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              touchAction: 'none',
+            }}>
             <Repeat size={13} strokeWidth={1.5} />
-          </IconBtn>
+          </button>
         </div>
       </div>
 
@@ -674,17 +714,23 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
             </span>
           </div>
 
-          {/* Transport: SkipBack | Loop toggle | Play/Pause */}
+          {/* Transport: SkipBack | Loop (hold=record, tap=toggle) | Play/Pause */}
           <div style={{ display: 'flex', gap: 10, padding: '4px 20px 12px', flexShrink: 0 }}>
             {squareBtn(playPrev, <SkipBack size={22} strokeWidth={1.5} />)}
-            <button onClick={toggleLoop} style={{
-              flex: 1, height: 52, borderRadius: 14, border: 'none',
-              background: loopActive ? 'var(--accent-subtle)' : 'var(--bg-secondary)',
-              color: loopActive ? 'var(--text-primary)' : 'var(--text-muted)',
-              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 15, fontWeight: 500,
-            }}>
+            <button
+              onPointerDown={handleLoopPressDown} onPointerUp={handleLoopPressUp}
+              onPointerLeave={handleLoopPressUp}
+              style={{
+                flex: 1, height: 52, borderRadius: 14, border: 'none',
+                background: loopActive ? 'var(--accent-subtle)' : 'var(--bg-secondary)',
+                color: loopActive ? 'var(--text-primary)' : 'var(--text-muted)',
+                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 15, fontWeight: 500,
+                touchAction: 'none', userSelect: 'none',
+              }}>
               <Repeat size={18} strokeWidth={1.5} />
-              {loopActive ? 'Looping' : 'Loop'}
+              {loopActive
+                ? (loopA !== null && loopB !== null ? `${fmt(loopA)} → ${fmt(loopB)}` : 'Looping')
+                : 'Loop'}
             </button>
             {squareBtn(togglePlay, engine.playing ? <Pause size={22} strokeWidth={1.5} /> : <Play size={22} strokeWidth={1.5} style={{ marginLeft: 2 }} />)}
           </div>
