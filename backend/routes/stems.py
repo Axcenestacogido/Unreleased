@@ -69,10 +69,6 @@ def _run_demucs(file_path: str, track_id: int, user_id: int) -> None:
             basename = Path(file_path).stem
             stem_dir = Path(tmpdir) / "htdemucs" / basename
 
-            # Delete existing auto-stems for this track
-            db.query(models.Stem).filter(models.Stem.track_id == track_id).delete()
-            db.commit()
-
             stem_names = ["vocals", "drums", "bass", "other"]
             created = []
             for name in stem_names:
@@ -81,14 +77,32 @@ def _run_demucs(file_path: str, track_id: int, user_id: int) -> None:
                     continue
                 dest = STEMS_DIR / f"{uuid.uuid4()}.mp3"
                 shutil.copy(src, dest)
-                stem = models.Stem(
-                    track_id=track_id,
-                    name=name.capitalize(),
-                    file_path=str(dest),
-                    file_size=dest.stat().st_size,
-                    volume=1.0,
+
+                # Update existing stem with this name, or create a new one.
+                # Manually uploaded stems (different names) are never touched.
+                existing = (
+                    db.query(models.Stem)
+                    .filter(
+                        models.Stem.track_id == track_id,
+                        models.Stem.name == name.capitalize(),
+                    )
+                    .first()
                 )
-                db.add(stem)
+                if existing:
+                    try:
+                        os.unlink(existing.file_path)
+                    except OSError:
+                        pass
+                    existing.file_path = str(dest)
+                    existing.file_size = dest.stat().st_size
+                else:
+                    db.add(models.Stem(
+                        track_id=track_id,
+                        name=name.capitalize(),
+                        file_path=str(dest),
+                        file_size=dest.stat().st_size,
+                        volume=1.0,
+                    ))
                 created.append(name)
 
             db.commit()
