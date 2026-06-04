@@ -298,10 +298,11 @@ export function useAudioEngine() {
     const newIds = new Set(stems.map((s) => s.id))
     const sameSet =
       newIds.size === loadedStemIdsRef.current.size &&
-      [...newIds].every((id) => loadedStemIdsRef.current.has(id))
+      [...newIds].every((id) => loadedStemIdsRef.current.has(id)) &&
+      stems.every((s) => stemPlayersRef.current[s.id]?.fileSize === s.file_size)
 
     if (sameSet) {
-      // Same stems — just sync gain values
+      // Same stems (same files) — just sync gain values
       stems.forEach((stem) => {
         const entry = stemPlayersRef.current[stem.id]
         if (entry) entry.gainNode.gain.value = Math.max(0, Math.min(1, stem.volume))
@@ -338,7 +339,7 @@ export function useAudioEngine() {
           player.loop = loopEnabledRef.current
           player.loopStart = loopARef.current
           player.loopEnd = loopBRef.current
-          return { stemId: stem.id, player, gainNode }
+          return { stemId: stem.id, player, gainNode, fileSize: stem.file_size }
         } catch (e) {
           console.error(`Stem ${stem.id} load error:`, e)
           return null
@@ -348,7 +349,7 @@ export function useAudioEngine() {
 
     const newPlayers = {}
     results.forEach((entry) => {
-      if (entry) newPlayers[entry.stemId] = { player: entry.player, gainNode: entry.gainNode }
+      if (entry) newPlayers[entry.stemId] = { player: entry.player, gainNode: entry.gainNode, fileSize: entry.fileSize }
     })
 
     if (Object.keys(newPlayers).length === 0) return
@@ -372,19 +373,59 @@ export function useAudioEngine() {
   }, [])
 
   useEffect(() => {
-    const unlock = () => Tone.start()
+    // Build a tiny silent WAV blob URL to keep the iOS audio session alive
+    // when the screen locks in PWA mode. A looping native <audio> element
+    // prevents iOS from suspending the Web Audio Context.
+    let silentAudio = null
+    let silentUrl = null
+
+    function _startSilentAudio() {
+      if (silentAudio) return
+      try {
+        const sr = 8000, n = 800 // 100 ms of 8kHz 8-bit mono silence
+        const buf = new ArrayBuffer(44 + n)
+        const v = new DataView(buf)
+        v.setUint32(0, 0x52494646, false)   // "RIFF"
+        v.setUint32(4, 36 + n, true)
+        v.setUint32(8, 0x57415645, false)   // "WAVE"
+        v.setUint32(12, 0x666D7420, false)  // "fmt "
+        v.setUint32(16, 16, true)
+        v.setUint16(20, 1, true)            // PCM
+        v.setUint16(22, 1, true)            // mono
+        v.setUint32(24, sr, true)
+        v.setUint32(28, sr, true)
+        v.setUint16(32, 1, true)
+        v.setUint16(34, 8, true)
+        v.setUint32(36, 0x64617461, false)  // "data"
+        v.setUint32(40, n, true)
+        new Uint8Array(buf, 44).fill(128)   // 128 = silence for unsigned 8-bit
+        silentUrl = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }))
+        silentAudio = document.createElement('audio')
+        silentAudio.src = silentUrl
+        silentAudio.loop = true
+        silentAudio.volume = 0
+        silentAudio.play().catch(() => {})
+      } catch {}
+    }
+
+    const unlock = async () => {
+      await Tone.start()
+      _startSilentAudio()
+    }
     document.addEventListener('click', unlock, { once: true })
     document.addEventListener('touchstart', unlock, { once: true, passive: true })
 
-    // Resume AudioContext when returning to the app (PWA screen-off support)
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
         Tone.context.resume().catch(() => {})
+        if (silentAudio) silentAudio.play().catch(() => {})
       }
     }
     document.addEventListener('visibilitychange', handleVisibility)
 
     return () => {
+      if (silentAudio) { silentAudio.pause(); silentAudio.src = '' }
+      if (silentUrl) URL.revokeObjectURL(silentUrl)
       cancelAnimationFrame(rafRef.current)
       _dispose()
       document.removeEventListener('click', unlock)

@@ -20,6 +20,7 @@ function fmt(s) {
 
 function Slider({ value, min, max, step, onChange, onReset }) {
   const trackRef = useRef(null)
+  const dragging = useRef(false)
   const pct = Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100))
 
   const getVal = useCallback((e) => {
@@ -30,17 +31,21 @@ function Slider({ value, min, max, step, onChange, onReset }) {
 
   const handlePointerDown = useCallback((e) => {
     e.currentTarget.setPointerCapture(e.pointerId)
+    dragging.current = true
     onChange(getVal(e))
   }, [getVal, onChange])
 
   const handlePointerMove = useCallback((e) => {
-    if (e.buttons === 0) return
+    if (!dragging.current) return
     onChange(getVal(e))
   }, [getVal, onChange])
+
+  const handlePointerUp = useCallback(() => { dragging.current = false }, [])
 
   return (
     <div ref={trackRef} onDoubleClick={onReset}
       onPointerDown={handlePointerDown} onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp}
       style={{ position: 'relative', height: 18, cursor: 'ew-resize', display: 'flex', alignItems: 'center', touchAction: 'none' }}>
       <div style={{ position: 'absolute', left: 0, right: 0, height: 2, background: 'var(--waveform-inactive)', borderRadius: 2 }} />
       <div style={{ position: 'absolute', left: 0, width: `${pct}%`, height: 2, background: 'var(--accent)', borderRadius: 2 }} />
@@ -67,6 +72,7 @@ function IconBtn({ onClick, children, active, size = 32, title }) {
 // Vertical fader for the stems mixer view
 function VerticalFader({ value, onChange, onReset }) {
   const trackRef = useRef(null)
+  const dragging = useRef(false)
   const pct = (1 - Math.max(0, Math.min(1, value))) * 100 // 0% = top (max), 100% = bottom (min)
 
   const getVal = useCallback((e) => {
@@ -76,17 +82,21 @@ function VerticalFader({ value, onChange, onReset }) {
 
   const handlePointerDown = useCallback((e) => {
     e.currentTarget.setPointerCapture(e.pointerId)
+    dragging.current = true
     onChange(getVal(e))
   }, [getVal, onChange])
 
   const handlePointerMove = useCallback((e) => {
-    if (e.buttons === 0) return
+    if (!dragging.current) return
     onChange(getVal(e))
   }, [getVal, onChange])
+
+  const handlePointerUp = useCallback(() => { dragging.current = false }, [])
 
   return (
     <div ref={trackRef}
       onPointerDown={handlePointerDown} onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp}
       onDoubleClick={onReset}
       style={{ flex: 1, position: 'relative', cursor: 'ns-resize', touchAction: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center' }}
     >
@@ -103,6 +113,7 @@ function VerticalFader({ value, onChange, onReset }) {
 // Slider for the mobile edit view — dark pill style with label + value
 function EditSlider({ label, value, display, min, max, onChange, onReset }) {
   const trackRef = useRef(null)
+  const dragging = useRef(false)
 
   const pct = Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100))
 
@@ -113,13 +124,16 @@ function EditSlider({ label, value, display, min, max, onChange, onReset }) {
 
   const handlePointerDown = useCallback((e) => {
     e.currentTarget.setPointerCapture(e.pointerId)
+    dragging.current = true
     onChange(getVal(e))
   }, [getVal, onChange])
 
   const handlePointerMove = useCallback((e) => {
-    if (e.buttons === 0) return
+    if (!dragging.current) return
     onChange(getVal(e))
   }, [getVal, onChange])
+
+  const handlePointerUp = useCallback(() => { dragging.current = false }, [])
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'var(--bg-secondary)', borderRadius: 12, padding: '14px 16px' }}>
@@ -127,6 +141,7 @@ function EditSlider({ label, value, display, min, max, onChange, onReset }) {
       <div ref={trackRef}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp}
         onDoubleClick={onReset}
         style={{ flex: 1, position: 'relative', height: 28, cursor: 'ew-resize', display: 'flex', alignItems: 'center', touchAction: 'none' }}
       >
