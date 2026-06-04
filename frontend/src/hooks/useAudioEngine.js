@@ -18,10 +18,6 @@ function extractPeaks(audioBuffer, numBars = 300) {
   return peaks.map((p) => p / maxPeak)
 }
 
-function linearToDb(linear) {
-  if (linear <= 0) return -Infinity
-  return 20 * Math.log10(linear)
-}
 
 export function useAudioEngine() {
   const [isLoading, setIsLoading] = useState(false)
@@ -78,17 +74,18 @@ export function useAudioEngine() {
   }
 
   function _startStemPlayers(offset) {
+    const safe = Math.max(0, Math.min(offset, durationRef.current - 0.05))
     Object.values(stemPlayersRef.current).forEach(({ player }) => {
       try { player.stop() } catch {}
-      try { player.start(Tone.now(), offset) } catch {}
+      try { player.start(Tone.now(), safe) } catch {}
     })
   }
 
   function _disposeStemPlayers() {
-    Object.values(stemPlayersRef.current).forEach(({ player, volNode }) => {
+    Object.values(stemPlayersRef.current).forEach(({ player, gainNode }) => {
       try { player.stop() } catch {}
       try { player.dispose() } catch {}
-      try { volNode.dispose() } catch {}
+      try { gainNode.disconnect() } catch {}
     })
     stemPlayersRef.current = {}
     stemsActiveRef.current = false
@@ -304,10 +301,10 @@ export function useAudioEngine() {
       [...newIds].every((id) => loadedStemIdsRef.current.has(id))
 
     if (sameSet) {
-      // Same stems already loaded — just sync volumes
+      // Same stems — just sync gain values
       stems.forEach((stem) => {
         const entry = stemPlayersRef.current[stem.id]
-        if (entry) entry.volNode.volume.value = linearToDb(stem.volume)
+        if (entry) entry.gainNode.gain.value = Math.max(0, Math.min(1, stem.volume))
       })
       return
     }
@@ -315,24 +312,35 @@ export function useAudioEngine() {
     _disposeStemPlayers()
 
     const token = localStorage.getItem('token')
+    const rawCtx = Tone.context.rawContext
+
     const results = await Promise.all(
       stems.map(async (stem) => {
         try {
           const res = await fetch(`/api/stems/${stem.id}/stream`, {
             headers: { Authorization: `Bearer ${token}` },
           })
-          if (!res.ok) return null
+          if (!res.ok) {
+            console.error(`Stem ${stem.id} stream failed: ${res.status}`)
+            return null
+          }
           const buf = await res.arrayBuffer()
-          const webBuf = await Tone.context.rawContext.decodeAudioData(buf)
+          const webBuf = await rawCtx.decodeAudioData(buf)
           const toneBuf = new Tone.ToneAudioBuffer(webBuf)
-          const volNode = new Tone.Volume(linearToDb(stem.volume)).toDestination()
-          const player = new Tone.Player(toneBuf).connect(volNode)
+
+          // Use a raw GainNode for volume — avoids Tone.js abstraction issues
+          const gainNode = rawCtx.createGain()
+          gainNode.gain.value = Math.max(0, Math.min(1, stem.volume))
+          gainNode.connect(rawCtx.destination)
+
+          const player = new Tone.Player(toneBuf).connect(gainNode)
           player.playbackRate = speedRef.current
           player.loop = loopEnabledRef.current
           player.loopStart = loopARef.current
           player.loopEnd = loopBRef.current
-          return { stemId: stem.id, player, volNode }
-        } catch {
+          return { stemId: stem.id, player, gainNode }
+        } catch (e) {
+          console.error(`Stem ${stem.id} load error:`, e)
           return null
         }
       })
@@ -340,7 +348,7 @@ export function useAudioEngine() {
 
     const newPlayers = {}
     results.forEach((entry) => {
-      if (entry) newPlayers[entry.stemId] = { player: entry.player, volNode: entry.volNode }
+      if (entry) newPlayers[entry.stemId] = { player: entry.player, gainNode: entry.gainNode }
     })
 
     if (Object.keys(newPlayers).length === 0) return
@@ -360,18 +368,28 @@ export function useAudioEngine() {
 
   const setStemVolume = useCallback((stemId, volume) => {
     const entry = stemPlayersRef.current[stemId]
-    if (entry) entry.volNode.volume.value = linearToDb(volume)
+    if (entry) entry.gainNode.gain.value = Math.max(0, Math.min(1, volume))
   }, [])
 
   useEffect(() => {
     const unlock = () => Tone.start()
     document.addEventListener('click', unlock, { once: true })
     document.addEventListener('touchstart', unlock, { once: true, passive: true })
+
+    // Resume AudioContext when returning to the app (PWA screen-off support)
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        Tone.context.resume().catch(() => {})
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+
     return () => {
       cancelAnimationFrame(rafRef.current)
       _dispose()
       document.removeEventListener('click', unlock)
       document.removeEventListener('touchstart', unlock)
+      document.removeEventListener('visibilitychange', handleVisibility)
     }
   }, [])
 

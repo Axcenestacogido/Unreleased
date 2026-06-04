@@ -257,7 +257,9 @@ def stream_stem(
     user: models.User = Depends(get_current_user),
 ):
     stem = _get_stem_owned(stem_id, user, db)
-    file_size = stem.file_size
+    if not Path(stem.file_path).exists():
+        raise HTTPException(status_code=404, detail="Stem file not found on disk")
+    file_size = stem.file_size or Path(stem.file_path).stat().st_size
     range_header = request.headers.get("range")
 
     if range_header:

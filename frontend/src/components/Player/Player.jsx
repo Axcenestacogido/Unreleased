@@ -494,7 +494,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
               background: loopActive ? 'var(--accent-subtle)' : 'transparent',
               color: loopActive ? 'var(--text-primary)' : 'var(--text-secondary)',
               cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              touchAction: 'none',
+              touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none',
             }}>
             <Repeat size={13} strokeWidth={1.5} />
           </button>
@@ -570,22 +570,20 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span className="mv-label" style={{ flex: 1 }}>STEMS</span>
                 <button
-                  onClick={separating || stems.length > 0 ? undefined : handleSeparate}
-                  disabled={separating || stems.length > 0}
-                  title={stems.length > 0 ? 'Delete stems to regenerate' : 'Auto-separate stems with AI'}
+                  onClick={separating ? undefined : handleSeparate}
+                  disabled={separating}
+                  title="Auto-separate stems with AI"
                   style={{
                     display: 'flex', alignItems: 'center', gap: 4,
                     padding: '3px 8px', borderRadius: 'var(--radius-sm)',
                     border: '1px solid var(--border)', background: 'transparent',
-                    color: stems.length > 0 ? 'var(--text-muted)' : 'var(--text-secondary)',
-                    fontSize: 'var(--text-xs)',
-                    cursor: separating ? 'wait' : stems.length > 0 ? 'default' : 'pointer',
-                    opacity: stems.length > 0 ? 0.5 : 1,
+                    color: 'var(--text-secondary)', fontSize: 'var(--text-xs)',
+                    cursor: separating ? 'wait' : 'pointer',
                   }}>
                   {separating
                     ? <Loader2 size={11} strokeWidth={2} style={{ animation: 'spin 0.8s linear infinite' }} />
                     : <Scissors size={11} strokeWidth={2} />}
-                  {separating ? 'Separating…' : 'Auto'}
+                  {separating ? 'Separating…' : stems.length > 0 ? 'Regen' : 'Auto'}
                 </button>
                 <button onClick={() => stemInputRef.current?.click()} style={{
                   display: 'flex', alignItems: 'center', gap: 4,
@@ -788,12 +786,11 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
                     <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 2 }}>Split your track into stems</div>
                   </div>
                   <button
-                    onClick={separating || stems.length > 0 ? undefined : handleSeparate}
-                    disabled={separating || stems.length > 0}
-                    title={stems.length > 0 ? 'Delete stems to regenerate' : undefined}
-                    style={{ background: stems.length > 0 ? 'var(--bg-tertiary)' : '#fff', border: 'none', borderRadius: 20, padding: '10px 20px', fontSize: 15, fontWeight: 600, color: stems.length > 0 ? 'var(--text-muted)' : '#000', cursor: separating ? 'wait' : stems.length > 0 ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, opacity: stems.length > 0 ? 0.5 : 1 }}>
+                    onClick={separating ? undefined : handleSeparate}
+                    disabled={separating}
+                    style={{ background: '#fff', border: 'none', borderRadius: 20, padding: '10px 20px', fontSize: 15, fontWeight: 600, color: '#000', cursor: separating ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                     {separating ? <Loader2 size={14} strokeWidth={2} style={{ animation: 'spin 0.8s linear infinite' }} /> : null}
-                    {separating ? 'Generating…' : 'Generate'}
+                    {separating ? 'Generating…' : stems.length > 0 ? 'Regenerate' : 'Generate'}
                   </button>
                 </div>
                 <input ref={stemInputRef} type="file" accept="audio/*" style={{ display: 'none' }} onChange={handleStemUpload} />
