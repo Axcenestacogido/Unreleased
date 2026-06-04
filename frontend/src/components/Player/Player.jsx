@@ -175,16 +175,17 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
     queryKey: ['stems', currentTrack?.id],
     queryFn: () => api.get(`/tracks/${currentTrack.id}/stems`).then(r => r.data),
     enabled: !!currentTrack,
-    onSuccess: (data) => {
-      if (data.length > 0 && separating) setSeparating(false)
-      // Sync query volumes into local state (don't overwrite in-progress drags)
-      setStemVolumes(prev => {
-        const next = { ...prev }
-        data.forEach(s => { if (next[s.id] === undefined) next[s.id] = s.volume })
-        return next
-      })
-    },
   })
+
+  // onSuccess was removed in React Query v5 — use a separate effect instead
+  useEffect(() => {
+    if (stems.length > 0 && separating) setSeparating(false)
+    setStemVolumes(prev => {
+      const next = { ...prev }
+      stems.forEach(s => { if (next[s.id] === undefined) next[s.id] = s.volume })
+      return next
+    })
+  }, [stems])
 
   useEffect(() => {
     if (!currentTrack) return
@@ -568,13 +569,19 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span className="mv-label" style={{ flex: 1 }}>STEMS</span>
-                <button onClick={handleSeparate} disabled={separating} title="Auto-separate stems with AI" style={{
-                  display: 'flex', alignItems: 'center', gap: 4,
-                  padding: '3px 8px', borderRadius: 'var(--radius-sm)',
-                  border: '1px solid var(--border)', background: 'transparent',
-                  color: 'var(--text-secondary)', fontSize: 'var(--text-xs)',
-                  cursor: separating ? 'wait' : 'pointer',
-                }}>
+                <button
+                  onClick={separating || stems.length > 0 ? undefined : handleSeparate}
+                  disabled={separating || stems.length > 0}
+                  title={stems.length > 0 ? 'Delete stems to regenerate' : 'Auto-separate stems with AI'}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 4,
+                    padding: '3px 8px', borderRadius: 'var(--radius-sm)',
+                    border: '1px solid var(--border)', background: 'transparent',
+                    color: stems.length > 0 ? 'var(--text-muted)' : 'var(--text-secondary)',
+                    fontSize: 'var(--text-xs)',
+                    cursor: separating ? 'wait' : stems.length > 0 ? 'default' : 'pointer',
+                    opacity: stems.length > 0 ? 0.5 : 1,
+                  }}>
                   {separating
                     ? <Loader2 size={11} strokeWidth={2} style={{ animation: 'spin 0.8s linear infinite' }} />
                     : <Scissors size={11} strokeWidth={2} />}
@@ -780,7 +787,11 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
                     <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)' }}>Stems</div>
                     <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 2 }}>Split your track into stems</div>
                   </div>
-                  <button onClick={separating ? undefined : handleSeparate} disabled={separating} style={{ background: '#fff', border: 'none', borderRadius: 20, padding: '10px 20px', fontSize: 15, fontWeight: 600, color: '#000', cursor: separating ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                  <button
+                    onClick={separating || stems.length > 0 ? undefined : handleSeparate}
+                    disabled={separating || stems.length > 0}
+                    title={stems.length > 0 ? 'Delete stems to regenerate' : undefined}
+                    style={{ background: stems.length > 0 ? 'var(--bg-tertiary)' : '#fff', border: 'none', borderRadius: 20, padding: '10px 20px', fontSize: 15, fontWeight: 600, color: stems.length > 0 ? 'var(--text-muted)' : '#000', cursor: separating ? 'wait' : stems.length > 0 ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, opacity: stems.length > 0 ? 0.5 : 1 }}>
                     {separating ? <Loader2 size={14} strokeWidth={2} style={{ animation: 'spin 0.8s linear infinite' }} /> : null}
                     {separating ? 'Generating…' : 'Generate'}
                   </button>
@@ -795,7 +806,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
                       <div key={name} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, background: 'var(--bg-secondary)', borderRadius: 16, padding: '16px 8px 12px', minHeight: 180 }}>
                         <div style={{ flex: 1, width: '100%', position: 'relative' }}>
                           {Array.from({ length: 12 }).map((_, i) => (
-                            <div key={i} style={{ position: 'absolute', left: 8, right: 8, top: `${(i / 11) * 100}%`, height: 1.5, borderRadius: 1, background: 'rgba(255,255,255,0.08)' }} />
+                            <div key={i} style={{ position: 'absolute', left: 8, right: 8, top: `${(i / 11) * 100}%`, height: 1.5, borderRadius: 1, background: 'rgba(255,255,255,0.18)' }} />
                           ))}
                         </div>
                         <div style={{ fontSize: 12, color: 'var(--text-muted)', letterSpacing: '0.03em' }}>{name}</div>
