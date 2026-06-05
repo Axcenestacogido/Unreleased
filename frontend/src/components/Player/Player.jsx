@@ -962,7 +962,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
 }
 
 export default function Player({ isMobile = false }) {
-  const { currentTrack, playNext, playPrev, setPlaying } = usePlayer()
+  const { currentTrack, queue, playNext, playPrev, setPlaying } = usePlayer()
   const engine = useAudioEngine()
   const [expanded, setExpanded] = useState(false)
 
@@ -972,10 +972,13 @@ export default function Player({ isMobile = false }) {
     if (!currentTrack) return
     if (engine.loadedTrackId === currentTrack.id) return
     const id = currentTrack.id
-    // loadedTrackIdRef.current always reflects the latest completed load,
-    // so even if this closure is stale we read the correct value
     engine.loadTrack(id).then(() => {
-      if (engine.loadedTrackIdRef.current === id) engine.play(0)
+      if (engine.loadedTrackIdRef.current !== id) return
+      engine.play(0)
+      // Prefetch adjacent tracks so the next skip feels instant
+      const idx = queue.findIndex(t => t.id === id)
+      if (idx >= 0 && idx + 1 < queue.length) engine.prefetchTrack(queue[idx + 1].id)
+      if (idx > 0) engine.prefetchTrack(queue[idx - 1].id)
     })
   }, [currentTrack?.id])
 

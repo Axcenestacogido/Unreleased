@@ -34,7 +34,7 @@ export function PlayerProvider({ children }) {
 
   return React.createElement(
     PlayerContext.Provider,
-    { value: { currentTrack, play, playNext, playPrev, playing, setPlaying } },
+    { value: { currentTrack, queue, play, playNext, playPrev, playing, setPlaying } },
     children
   )
 }
