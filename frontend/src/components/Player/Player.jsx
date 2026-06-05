@@ -726,7 +726,8 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
           <div style={{ height: 1, background: 'var(--border)', flexShrink: 0 }} />
 
           {/* Sub-content: Adjust or Stems */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px 0' }}>
+          {/* overflowY:hidden in stems tab so iOS doesn't intercept vertical fader drags as scroll */}
+          <div style={{ flex: 1, overflowY: editSubTab === 'stems' ? 'hidden' : 'auto', padding: '14px 16px 0' }}>
             {editSubTab === 'adjust' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <span style={{ fontSize: 11, color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600, marginBottom: 2 }}>VARISPEED</span>
@@ -775,7 +776,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
                 <input ref={stemInputRef} type="file" accept="audio/*" style={{ display: 'none' }} onChange={handleStemUpload} />
 
                 {/* Fader grid */}
-                <div style={{ display: 'flex', gap: 10, flex: 1, minHeight: 0 }}>
+                <div style={{ display: 'flex', gap: 10, flex: 1, minHeight: 0, touchAction: 'none' }}>
                   {stems.length === 0 ? (
                     /* Placeholder cards when no stems */
                     ['vocals', 'drums', 'bass', 'other'].map(name => (
@@ -791,7 +792,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
                     ))
                   ) : (
                     stems.map(stem => (
-                      <div key={stem.id} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, background: 'var(--bg-secondary)', borderRadius: 16, padding: '16px 8px 12px', minHeight: 180 }}>
+                      <div key={stem.id} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, background: 'var(--bg-secondary)', borderRadius: 16, padding: '16px 8px 12px', minHeight: 180, touchAction: 'none' }}>
                         <VerticalFader
                           value={stemVolumes[stem.id] ?? stem.volume}
                           onChange={v => handleStemVolumeChange(stem, Math.round(v * 100) / 100)}
