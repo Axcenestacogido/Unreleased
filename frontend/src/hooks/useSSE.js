@@ -51,6 +51,12 @@ export function useSSE() {
       case 'stems_error':
         qc.invalidateQueries({ queryKey: ['stems', event.track_id] })
         break
+
+      case 'stems_progress':
+        window.dispatchEvent(new CustomEvent('stems-progress', {
+          detail: { trackId: event.track_id, percent: event.percent },
+        }))
+        break
     }
   }
 
