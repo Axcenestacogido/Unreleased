@@ -5,11 +5,32 @@ import api from '../../api/client'
 
 function CopyButton({ text }) {
   const [copied, setCopied] = useState(false)
-  function copy() {
-    navigator.clipboard.writeText(text)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+
+  async function copy() {
+    let ok = false
+    if (navigator.clipboard) {
+      try {
+        await navigator.clipboard.writeText(text)
+        ok = true
+      } catch {}
+    }
+    if (!ok) {
+      // Fallback for HTTP (no secure context) and older Safari
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none'
+      document.body.appendChild(ta)
+      ta.focus()
+      ta.setSelectionRange(0, text.length)
+      try { ok = document.execCommand('copy') } catch {}
+      document.body.removeChild(ta)
+    }
+    if (ok) {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
   }
+
   return (
     <button
       onClick={copy}
