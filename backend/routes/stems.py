@@ -1,8 +1,10 @@
 import asyncio
 import os
+import re
 import shutil
 import subprocess
 import tempfile
+import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -55,13 +57,69 @@ def _run_demucs(file_path: str, track_id: int, user_id: int) -> None:
                 "-o", tmpdir,
                 file_path,
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                bufsize=0,
+            )
 
-            if result.returncode != 0:
+            runs_done = 0
+            current_pct = 0
+            last_published = -1
+            output_tail = []
+
+            def _read_output():
+                nonlocal runs_done, current_pct, last_published
+                buf = b''
+                for chunk in iter(lambda: proc.stdout.read(256), b''):
+                    buf += chunk
+                    parts = re.split(rb'[\r\n]', buf)
+                    buf = parts[-1]
+                    for part in parts[:-1]:
+                        try:
+                            line = part.decode('utf-8', errors='replace').strip()
+                        except Exception:
+                            continue
+                        if not line:
+                            continue
+                        output_tail.append(line)
+                        if len(output_tail) > 50:
+                            output_tail.pop(0)
+                        m = re.search(r'(\d+)%', line)
+                        if m:
+                            pct = int(m.group(1))
+                            if pct == 100:
+                                runs_done = min(runs_done + 1, 4)
+                                current_pct = 0
+                            else:
+                                current_pct = pct
+                            overall = min(99, (runs_done * 100 + current_pct) // 4)
+                            if overall != last_published:
+                                last_published = overall
+                                event_bus.publish(user_id, {
+                                    "type": "stems_progress",
+                                    "track_id": track_id,
+                                    "percent": overall,
+                                })
+
+            reader = threading.Thread(target=_read_output, daemon=True)
+            reader.start()
+
+            try:
+                proc.wait(timeout=3600)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+
+            reader.join(timeout=5)
+
+            if proc.returncode != 0:
+                error_msg = '\n'.join(output_tail[-20:])[-500:] if output_tail else "Unknown error"
                 event_bus.publish(user_id, {
                     "type": "stems_error",
                     "track_id": track_id,
-                    "message": result.stderr[-500:] if result.stderr else "Unknown error",
+                    "message": error_msg,
                 })
                 return
 

@@ -186,6 +186,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
   const [lyrics, setLyrics] = useState('')
   const [analyzing, setAnalyzing] = useState(false)
   const [separating, setSeparating] = useState(false)
+  const [stemProgress, setStemProgress] = useState(null)
   const [stemVolumes, setStemVolumes] = useState({})
   const saveTimeout = useRef(null)
   const stemSaveTimeouts = useRef({})
@@ -202,7 +203,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
 
   // onSuccess was removed in TanStack Query v5 — use an effect instead
   useEffect(() => {
-    if (stems.length > 0 && separating) setSeparating(false)
+    if (stems.length > 0 && separating) { setSeparating(false); setStemProgress(null) }
     setStemVolumes(prev => {
       const next = { ...prev }
       stems.forEach(s => { if (next[s.id] === undefined) next[s.id] = s.volume })
@@ -216,6 +217,17 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
     setKey(currentTrack.key_signature || '')
     setLyrics(currentTrack.lyrics || '')
     setSeparating(false)
+    setStemProgress(null)
+  }, [currentTrack?.id])
+
+  useEffect(() => {
+    if (!currentTrack) return
+    function onStemsProgress(e) {
+      if (e.detail.trackId !== currentTrack.id) return
+      setStemProgress(e.detail.percent)
+    }
+    window.addEventListener('stems-progress', onStemsProgress)
+    return () => window.removeEventListener('stems-progress', onStemsProgress)
   }, [currentTrack?.id])
 
   // Sync stems to audio engine whenever they change
@@ -578,9 +590,22 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
               </div>
 
               {separating && (
-                <span className="mv-meta" style={{ fontSize: 'var(--text-xs)' }}>
-                  AI separating vocals / drums / bass / other… this can take several minutes.
-                </span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <span className="mv-meta" style={{ fontSize: 'var(--text-xs)' }}>
+                    AI separating vocals / drums / bass / other… this can take several minutes.
+                  </span>
+                  {stemProgress !== null && (
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>Separating…</span>
+                        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{stemProgress}%</span>
+                      </div>
+                      <div style={{ height: 2, background: 'var(--bg-tertiary)', borderRadius: 2 }}>
+                        <div style={{ height: '100%', width: `${stemProgress}%`, background: 'var(--accent)', borderRadius: 2, transition: 'width 0.3s ease' }} />
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
 
               {!separating && stems.length === 0 && (
@@ -726,8 +751,9 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
           <div style={{ height: 1, background: 'var(--border)', flexShrink: 0 }} />
 
           {/* Sub-content: Adjust or Stems */}
-          {/* overflowY:hidden in stems tab so iOS doesn't intercept vertical fader drags as scroll */}
-          <div style={{ flex: 1, overflowY: editSubTab === 'stems' ? 'hidden' : 'auto', padding: '14px 16px 0' }}>
+          {/* display:flex makes stems content flex:1 work; overflow:hidden prevents
+              iOS from intercepting vertical touches as scroll when faders are shown */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: editSubTab === 'stems' ? 'hidden' : 'auto', padding: '14px 16px 0' }}>
             {editSubTab === 'adjust' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <span style={{ fontSize: 11, color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600, marginBottom: 2 }}>VARISPEED</span>
@@ -761,7 +787,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
             )}
 
             {editSubTab === 'stems' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, height: '100%' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, flex: 1, minHeight: 0 }}>
                 {/* Header row */}
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
                   <div>
@@ -806,8 +832,21 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
                 </div>
 
                 {separating && (
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
-                    AI separating vocals / drums / bass / other… may take a few minutes.
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
+                      AI separating vocals / drums / bass / other… may take a few minutes.
+                    </div>
+                    {stemProgress !== null && (
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Progress</span>
+                          <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{stemProgress}%</span>
+                        </div>
+                        <div style={{ height: 3, background: 'rgba(255,255,255,0.12)', borderRadius: 3, overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${stemProgress}%`, background: '#fff', borderRadius: 3, transition: 'width 0.4s ease' }} />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
