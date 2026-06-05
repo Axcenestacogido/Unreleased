@@ -22,6 +22,8 @@ class EventBus:
         with self._lock:
             try:
                 self._subscribers[user_id].remove(q)
+                if not self._subscribers[user_id]:
+                    del self._subscribers[user_id]
             except ValueError:
                 pass
 

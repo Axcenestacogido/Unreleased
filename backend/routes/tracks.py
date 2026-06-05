@@ -1,8 +1,11 @@
+import logging
 import os
 import uuid
 import hashlib
 from pathlib import Path
 from typing import List, Optional
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
 from fastapi.responses import StreamingResponse
@@ -328,6 +331,7 @@ def analyze_track(
             else f"{note_names[best_minor]} minor"
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {e}")
+        logger.error("Audio analysis error for track %s: %s", track_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Audio analysis failed")
 
     return {"bpm": bpm, "key": key}

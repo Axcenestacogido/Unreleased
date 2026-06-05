@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from database import get_db
 import models
@@ -288,10 +288,19 @@ def get_analytics(
         models.Project.user_id == user.id
     ).all()]
 
-    links = db.query(models.SharedLink).filter(
-        (models.SharedLink.track_id.in_(track_ids)) |
-        (models.SharedLink.project_id.in_(project_ids))
-    ).all()
+    links = (
+        db.query(models.SharedLink)
+        .options(
+            joinedload(models.SharedLink.track),
+            joinedload(models.SharedLink.project),
+            joinedload(models.SharedLink.listen_events),
+        )
+        .filter(
+            (models.SharedLink.track_id.in_(track_ids)) |
+            (models.SharedLink.project_id.in_(project_ids))
+        )
+        .all()
+    )
 
     result = []
     for link in links:
