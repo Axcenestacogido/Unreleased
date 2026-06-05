@@ -98,7 +98,7 @@ function VerticalFader({ value, onChange, onReset }) {
       onPointerDown={handlePointerDown} onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp}
       onDoubleClick={onReset}
-      style={{ flex: 1, minHeight: 120, position: 'relative', cursor: 'ns-resize', touchAction: 'none' }}
+      style={{ flex: 1, minHeight: 120, width: '100%', position: 'relative', cursor: 'ns-resize', touchAction: 'none' }}
     >
       {/* Tick lines (rallas) */}
       {Array.from({ length: 12 }).map((_, i) => (
