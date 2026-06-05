@@ -726,8 +726,9 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
           <div style={{ height: 1, background: 'var(--border)', flexShrink: 0 }} />
 
           {/* Sub-content: Adjust or Stems */}
-          {/* overflowY:hidden in stems tab so iOS doesn't intercept vertical fader drags as scroll */}
-          <div style={{ flex: 1, overflowY: editSubTab === 'stems' ? 'hidden' : 'auto', padding: '14px 16px 0' }}>
+          {/* display:flex makes stems content flex:1 work; overflow:hidden prevents
+              iOS from intercepting vertical touches as scroll when faders are shown */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: editSubTab === 'stems' ? 'hidden' : 'auto', padding: '14px 16px 0' }}>
             {editSubTab === 'adjust' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <span style={{ fontSize: 11, color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600, marginBottom: 2 }}>VARISPEED</span>
@@ -761,7 +762,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
             )}
 
             {editSubTab === 'stems' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, height: '100%' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, flex: 1, minHeight: 0 }}>
                 {/* Header row */}
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
                   <div>
