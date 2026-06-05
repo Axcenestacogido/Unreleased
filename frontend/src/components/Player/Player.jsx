@@ -3,7 +3,7 @@ import {
   Play, Pause, SkipBack, SkipForward,
   Repeat, Disc3, Music2, ChevronDown,
   Plus, Trash2, Loader2, Zap, Scissors,
-  FileText, SlidersHorizontal, X,
+  FileText, SlidersHorizontal,
 } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { usePlayer } from '../../hooks/usePlayer'
@@ -175,6 +175,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
   const saveTimeout = useRef(null)
   const stemInputRef = useRef(null)
   const wasPlayingRef = useRef(false)
+  const loopPressRef = useRef(null)
 
   // Fetch stems via query so SSE invalidation triggers a refresh
   const { data: stems = [] } = useQuery({
@@ -260,42 +261,38 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
     if (wasPlayingRef.current) engine.play()
   }
 
-  function handleLoopAClick() {
-    const t = engine.currentTime
-    if (loopA !== null && Math.abs(loopA - t) < 0.5) {
-      setLoopA(null); setLoopB(null); setLoopActive(false); engine.setLoopEnabled(false)
-    } else {
-      const newA = t
-      const newB = loopB !== null ? Math.max(loopB, newA + 1) : engine.duration
-      setLoopA(newA); setLoopB(newB); engine.setLoopPoints(newA, newB)
-      if (loopB !== null) { engine.setLoopEnabled(true); setLoopActive(true) }
-    }
+  function handleLoopPointerDown(e) {
+    e.preventDefault()
+    e.currentTarget.setPointerCapture(e.pointerId)
+    loopPressRef.current = { startMs: Date.now(), startTime: engine.currentTime }
   }
 
-  function handleLoopBClick() {
-    const t = engine.currentTime
-    if (loopB !== null && Math.abs(loopB - t) < 0.5) {
-      setLoopA(null); setLoopB(null); setLoopActive(false); engine.setLoopEnabled(false)
-    } else {
-      const newB = t
-      const newA = loopA !== null ? Math.min(loopA, newB - 1) : 0
-      setLoopA(newA); setLoopB(newB); engine.setLoopPoints(newA, newB)
-      if (loopA !== null) { engine.setLoopEnabled(true); setLoopActive(true) }
-    }
-  }
+  function handleLoopPointerUp() {
+    if (!loopPressRef.current) return
+    const elapsed = Date.now() - loopPressRef.current.startMs
 
-  function toggleLoop() {
-    const next = !loopActive
-    setLoopActive(next)
-    engine.setLoopEnabled(next)
-    if (next) {
-      if (loopA === null || loopB === null) {
-        const a = 0, b = engine.duration
-        setLoopA(a); setLoopB(b); engine.setLoopPoints(a, b)
+    if (loopActive && elapsed < 300) {
+      // Quick tap while looping → exit loop
+      setLoopActive(false); setLoopA(null); setLoopB(null)
+      engine.setLoopEnabled(false)
+    } else if (elapsed >= 300) {
+      // Hold → set A at press time, B at release time
+      const a = loopPressRef.current.startTime
+      const b = engine.currentTime
+      if (b > a + 0.1) {
+        setLoopA(a); setLoopB(b); setLoopActive(true)
+        engine.setLoopPoints(a, b)
+        engine.setLoopEnabled(true)
       }
     } else {
-      setLoopA(null); setLoopB(null)
+      // Quick tap while not looping → activate full-track loop
+      const a = 0, b = engine.duration
+      setLoopA(a); setLoopB(b); setLoopActive(true)
+      engine.setLoopPoints(a, b)
+      engine.setLoopEnabled(true)
     }
+
+    loopPressRef.current = null
   }
 
   async function handleAnalyze() {
@@ -443,29 +440,27 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
         {/* Loop row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span className="mv-label">LOOP</span>
-          <button onClick={handleLoopAClick} style={{
-            padding: '3px 8px', borderRadius: 'var(--radius-sm)', border: '1px solid',
-            borderColor: loopA !== null ? 'var(--border-strong)' : 'var(--border)',
-            background: loopA !== null ? 'var(--accent-subtle)' : 'transparent',
-            color: loopA !== null ? 'var(--text-primary)' : 'var(--text-muted)',
-            fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', cursor: 'pointer',
-          }}>A {loopA !== null ? fmt(loopA) : '--'}</button>
-          <button onClick={handleLoopBClick} style={{
-            padding: '3px 8px', borderRadius: 'var(--radius-sm)', border: '1px solid',
-            borderColor: loopB !== null ? 'var(--border-strong)' : 'var(--border)',
-            background: loopB !== null ? 'var(--accent-subtle)' : 'transparent',
-            color: loopB !== null ? 'var(--text-primary)' : 'var(--text-muted)',
-            fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', cursor: 'pointer',
-          }}>B {loopB !== null ? fmt(loopB) : '--'}</button>
-          {(loopA !== null || loopB !== null) && (
-            <button onClick={toggleLoop} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 0, padding: 2 }}>
-              <X size={12} strokeWidth={1.5} />
-            </button>
+          {loopActive && loopA !== null && loopB !== null && (
+            <span className="mv-mono" style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+              {fmt(loopA)}–{fmt(loopB)}
+            </span>
           )}
           <div style={{ flex: 1 }} />
-          <IconBtn onClick={toggleLoop} active={loopActive} size={28} title="Loop">
+          <button
+            onPointerDown={handleLoopPointerDown}
+            onPointerUp={handleLoopPointerUp}
+            onPointerCancel={() => { loopPressRef.current = null }}
+            title={loopActive ? 'Tap to exit loop' : 'Hold to set loop region'}
+            style={{
+              width: 28, height: 28, borderRadius: '50%', border: 'none',
+              background: loopActive ? 'var(--accent-subtle)' : 'transparent',
+              color: loopActive ? 'var(--text-primary)' : 'var(--text-secondary)',
+              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              touchAction: 'none', flexShrink: 0,
+            }}
+          >
             <Repeat size={13} strokeWidth={1.5} />
-          </IconBtn>
+          </button>
         </div>
       </div>
 
@@ -685,14 +680,22 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
           {/* Transport: SkipBack | Loop toggle | Play/Pause */}
           <div style={{ display: 'flex', gap: 10, padding: '4px 20px 12px', flexShrink: 0 }}>
             {squareBtn(playPrev, <SkipBack size={22} strokeWidth={1.5} />)}
-            <button onClick={toggleLoop} style={{
-              flex: 1, height: 52, borderRadius: 14, border: 'none',
-              background: loopActive ? 'var(--accent-subtle)' : 'var(--bg-secondary)',
-              color: loopActive ? 'var(--text-primary)' : 'var(--text-muted)',
-              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 15, fontWeight: 500,
-            }}>
+            <button
+              onPointerDown={handleLoopPointerDown}
+              onPointerUp={handleLoopPointerUp}
+              onPointerCancel={() => { loopPressRef.current = null }}
+              style={{
+                flex: 1, height: 52, borderRadius: 14, border: 'none',
+                background: loopActive ? 'var(--accent-subtle)' : 'var(--bg-secondary)',
+                color: loopActive ? 'var(--text-primary)' : 'var(--text-muted)',
+                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 15, fontWeight: 500,
+                touchAction: 'none',
+              }}
+            >
               <Repeat size={18} strokeWidth={1.5} />
-              {loopActive ? 'Looping' : 'Loop'}
+              {loopActive
+                ? (loopA !== null && loopB !== null ? `${fmt(loopA)}–${fmt(loopB)}` : 'Looping')
+                : 'Loop'}
             </button>
             {squareBtn(togglePlay, engine.playing ? <Pause size={22} strokeWidth={1.5} /> : <Play size={22} strokeWidth={1.5} style={{ marginLeft: 2 }} />)}
           </div>
