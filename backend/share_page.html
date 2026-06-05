@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MusicVault</title>
+<script src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0a0a0a; --bg2: #111; --bg3: #1a1a1a;
+    --border: #222; --border2: #333;
+    --text: #fff; --muted: #666; --accent: #a3e635;
+    --radius: 10px; --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 20px; }
+  #app { width: 100%; max-width: 440px; }
+  .spinner { width: 18px; height: 18px; border: 2px solid var(--border2); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .label { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .h1 { font-size: 22px; font-weight: 600; margin: 6px 0 4px; }
+  .meta { font-size: 13px; color: var(--muted); }
+  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .play-btn { width: 32px; height: 32px; border-radius: 50%; background: var(--bg3); border: none;
+    cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: var(--text); }
+  .play-btn svg { display: block; }
+  .track-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .track-select { background: transparent; color: var(--muted); font-size: 11px; border: none;
+    outline: none; font-family: var(--font); margin-top: 2px; width: 100%; }
+  .wave { border-radius: 6px; overflow: hidden; }
+  /* Single track transport */
+  .transport { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 4px; }
+  .btn-big { width: 48px; height: 48px; border-radius: 50%; background: var(--bg2);
+    border: 1px solid var(--border2); cursor: pointer; display: flex; align-items: center;
+    justify-content: center; color: var(--text); }
+  .btn-icon { background: transparent; border: none; cursor: pointer; color: var(--muted); padding: 4px;
+    display: flex; align-items: center; }
+  /* Password form */
+  .form { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+  .input { width: 100%; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px; font-size: 14px; color: var(--text); outline: none; font-family: var(--font); }
+  .input:focus { border-color: var(--border2); }
+  .btn-primary { width: 100%; background: var(--accent); color: #000; border: none;
+    border-radius: 8px; padding: 10px 12px; font-size: 14px; font-weight: 500;
+    font-family: var(--font); cursor: pointer; }
+  .err { color: #f87171; font-size: 12px; }
+  /* Versions list */
+  .versions { margin-top: 8px; }
+  .version-row { display: flex; justify-content: space-between; padding: 6px 0;
+    border-bottom: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+  .footer { margin-top: 48px; font-size: 11px; color: var(--muted); text-align: center; }
+  .tracks-list { display: flex; flex-direction: column; gap: 8px; }
+  .header-section { margin-bottom: 16px; }
+</style>
+</head>
+<body>
+<div id="app"><div class="spinner"></div></div>
+<p class="footer">MusicVault</p>
+
+<script>
+const token = location.pathname.split('/').filter(Boolean)[1]
+let password = ''
+let waveSurfers = {}
+
+function iconPlay(size=16) {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>`
+}
+function iconPause(size=16) {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`
+}
+function iconLock() {
+  return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`
+}
+
+async function api(path, opts={}) {
+  const r = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts })
+  if (!r.ok) throw r
+  return r.json()
+}
+
+function render(html) {
+  document.getElementById('app').innerHTML = html
+}
+
+function showError(msg) {
+  render(`<p class="meta" style="text-align:center;color:var(--muted)">${msg}</p>`)
+}
+
+// --- Password gate ---
+function showPasswordGate() {
+  render(`
+    <div class="form">
+      <div style="color:var(--muted)">${iconLock()}</div>
+      <p style="font-size:18px;font-weight:600;text-align:center">This track is private</p>
+      <p class="meta" style="text-align:center">Enter the password to listen</p>
+      <div style="width:100%;display:flex;flex-direction:column;gap:10px">
+        <input id="pwd" class="input" type="password" placeholder="Password" />
+        <p id="pwd-err" class="err" style="display:none"></p>
+        <button class="btn-primary" onclick="submitPassword()">Unlock</button>
+      </div>
+    </div>
+  `)
+  document.getElementById('pwd').addEventListener('keydown', e => { if (e.key === 'Enter') submitPassword() })
+}
+
+async function submitPassword() {
+  const pwd = document.getElementById('pwd').value
+  const errEl = document.getElementById('pwd-err')
+  errEl.style.display = 'none'
+  try {
+    await api(`/s/${token}/auth`, { method: 'POST', body: JSON.stringify({ password: pwd }) })
+    password = pwd
+    loadContent()
+  } catch {
+    errEl.textContent = 'Wrong password'
+    errEl.style.display = 'block'
+  }
+}
+
+// --- Track page ---
+function showTrack(data) {
+  const versions = data.versions || []
+  const latest = versions.length ? versions[versions.length - 1] : null
+
+  render(`
+    <div style="display:flex;flex-direction:column;gap:20px">
+      <div>
+        <span class="label">${data.project_name || 'TRACK'}</span>
+        <h1 class="h1">${esc(data.name)}</h1>
+        ${data.artist ? `<p class="meta">${esc(data.artist)}</p>` : ''}
+      </div>
+      <div id="wave-single" class="wave"></div>
+      <div class="transport">
+        <button class="btn-icon" onclick="seekSingle(-10)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.55"/></svg>
+        </button>
+        <button class="btn-big" id="btn-play-single" onclick="toggleSingle()">${iconPlay(18)}</button>
+        <button class="btn-icon" style="opacity:0.3" disabled>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.49-3.55"/></svg>
+        </button>
+      </div>
+      ${versions.length > 1 ? `
+        <div class="versions">
+          <p class="label" style="margin-bottom:8px">Versions</p>
+          ${[...versions].reverse().map(v => `
+            <div class="version-row">
+              <span>v${v.version_number}${v.note ? ` — ${v.note}` : ''}</span>
+              <span>${new Date(v.created_at).toLocaleDateString()}</span>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+    </div>
+  `)
+
+  const params = new URLSearchParams()
+  if (password) params.set('password', password)
+  if (latest) params.set('version', latest.version_number)
+  const ws = WaveSurfer.create({
+    container: '#wave-single', waveColor: '#2a2a2a', progressColor: '#fff',
+    cursorColor: 'rgba(255,255,255,0.8)', height: 96, barWidth: 2, barGap: 1, barRadius: 2, normalize: true
+  })
+  ws.load(`/s/${token}/stream?${params}`)
+  ws.on('finish', () => { document.getElementById('btn-play-single').innerHTML = iconPlay(18) })
+  waveSurfers['single'] = ws
+}
+
+function toggleSingle() {
+  const ws = waveSurfers['single']
+  if (!ws) return
+  const btn = document.getElementById('btn-play-single')
+  if (ws.isPlaying()) { ws.pause(); btn.innerHTML = iconPlay(18) }
+  else { ws.play(); btn.innerHTML = iconPause(18) }
+}
+
+function seekSingle(sec) {
+  const ws = waveSurfers['single']
+  if (!ws) return
+  ws.setTime(Math.max(0, ws.getCurrentTime() + sec))
+}
+
+// --- Project page ---
+function showProject(data) {
+  const tracks = data.tracks || []
+  render(`
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <div class="header-section">
+        <span class="label">PROJECT</span>
+        <h1 class="h1">${esc(data.name)}</h1>
+        ${data.description ? `<p class="meta">${esc(data.description)}</p>` : ''}
+      </div>
+      <div class="tracks-list" id="tracks-list">
+        ${tracks.length === 0 ? '<p class="meta" style="text-align:center;padding:24px 0">No tracks</p>' : ''}
+        ${tracks.map(t => renderTrackCard(t)).join('')}
+      </div>
+    </div>
+  `)
+  tracks.forEach(t => initTrackPlayer(t))
+}
+
+function renderTrackCard(t) {
+  const versions = t.versions || []
+  const latest = versions[versions.length - 1]
+  return `
+    <div class="card" id="card-${t.id}">
+      <div class="row">
+        <button class="play-btn" id="btn-${t.id}" onclick="toggleTrack(${t.id})">${iconPlay(13)}</button>
+        <div style="min-width:0;flex:1">
+          <p class="track-name">${esc(t.name)}</p>
+          ${versions.length > 1 ? `
+            <select class="track-select" id="sel-${t.id}" onchange="changeVersion(${t.id},this.value)">
+              <option value="">Latest (v${latest?.version_number})</option>
+              ${[...versions].reverse().map(v =>
+                `<option value="${v.version_number}">v${v.version_number}${v.note ? ` — ${v.note}` : ''}</option>`
+              ).join('')}
+            </select>
+          ` : ''}
+        </div>
+      </div>
+      <div id="wave-${t.id}" class="wave"></div>
+    </div>
+  `
+}
+
+function initTrackPlayer(t) {
+  const versions = t.versions || []
+  const latest = versions[versions.length - 1]
+  const params = new URLSearchParams()
+  if (password) params.set('password', password)
+  if (latest) params.set('version', latest.version_number)
+  const ws = WaveSurfer.create({
+    container: `#wave-${t.id}`, waveColor: '#2a2a2a', progressColor: '#fff',
+    cursorColor: 'transparent', height: 48, barWidth: 2, barGap: 1, barRadius: 2, normalize: true
+  })
+  ws.load(`/s/${token}/stream/${t.id}?${params}`)
+  ws.on('finish', () => { document.getElementById(`btn-${t.id}`).innerHTML = iconPlay(13) })
+  waveSurfers[t.id] = { ws, track: t }
+}
+
+function toggleTrack(id) {
+  const entry = waveSurfers[id]
+  if (!entry) return
+  const { ws } = entry
+  const btn = document.getElementById(`btn-${id}`)
+  // Pause all others
+  Object.entries(waveSurfers).forEach(([k, v]) => {
+    if (k != id && v.ws && v.ws.isPlaying()) {
+      v.ws.pause()
+      document.getElementById(`btn-${k}`)?.innerHTML && (document.getElementById(`btn-${k}`).innerHTML = iconPlay(13))
+    }
+  })
+  if (ws.isPlaying()) { ws.pause(); btn.innerHTML = iconPlay(13) }
+  else { ws.play(); btn.innerHTML = iconPause(13) }
+}
+
+function changeVersion(id, ver) {
+  const entry = waveSurfers[id]
+  if (!entry) return
+  const { ws, track } = entry
+  ws.destroy()
+  const versions = track.versions || []
+  const latest = versions[versions.length - 1]
+  const params = new URLSearchParams()
+  if (password) params.set('password', password)
+  const v = ver ? parseInt(ver) : latest?.version_number
+  if (v) params.set('version', v)
+  const newWs = WaveSurfer.create({
+    container: `#wave-${id}`, waveColor: '#2a2a2a', progressColor: '#fff',
+    cursorColor: 'transparent', height: 48, barWidth: 2, barGap: 1, barRadius: 2, normalize: true
+  })
+  newWs.load(`/s/${token}/stream/${id}?${params}`)
+  newWs.on('finish', () => { document.getElementById(`btn-${id}`).innerHTML = iconPlay(13) })
+  waveSurfers[id] = { ws: newWs, track }
+}
+
+function esc(s) {
+  if (!s) return ''
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+}
+
+// --- Boot ---
+async function loadContent() {
+  try {
+    const meta = await api(`/s/${token}/meta`)
+    if (meta.has_password && !password) { showPasswordGate(); return }
+    const params = password ? `?password=${encodeURIComponent(password)}` : ''
+    if (meta.track_id) {
+      const data = await api(`/s/${token}/track${params}`)
+      showTrack(data)
+    } else if (meta.project_id) {
+      const data = await api(`/s/${token}/project${params}`)
+      showProject(data)
+    }
+  } catch(e) {
+    const status = e?.status
+    if (status === 410) showError('This link has expired.')
+    else if (status === 404) showError('Link not found.')
+    else showError('Could not load content.')
+  }
+}
+
+loadContent()
+</script>
+</body>
+</html>
