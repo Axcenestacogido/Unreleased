@@ -1,8 +1,9 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Disc3, FolderPlus, Upload, X, Music2 } from 'lucide-react'
 import api from '../api/client'
+import { usePlayer } from '../hooks/usePlayer'
 
 function ProjectCard({ project, onClick }) {
   const [hover, setHover] = useState(false)
@@ -166,9 +167,30 @@ function AddModal({ onClose }) {
   )
 }
 
+function useIsMobile() {
+  const [mobile, setMobile] = useState(() => window.innerWidth < 768)
+  useEffect(() => {
+    const fn = () => setMobile(window.innerWidth < 768)
+    window.addEventListener('resize', fn)
+    return () => window.removeEventListener('resize', fn)
+  }, [])
+  return mobile
+}
+
 export default function Dashboard() {
   const navigate = useNavigate()
   const [showAdd, setShowAdd] = useState(false)
+  const { currentTrack } = usePlayer()
+  const isMobile = useIsMobile()
+
+  // The mini player's "+" button fires this event
+  useEffect(() => {
+    const handler = () => setShowAdd(true)
+    window.addEventListener('mini-player-add', handler)
+    return () => window.removeEventListener('mini-player-add', handler)
+  }, [])
+
+  const hasMiniPlayer = isMobile && !!currentTrack
 
   const { data: projects = [], isLoading } = useQuery({
     queryKey: ['projects'],
@@ -187,7 +209,7 @@ export default function Dashboard() {
       </div>
 
       {/* Grid */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px 100px' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: `20px 24px ${hasMiniPlayer ? '170px' : '100px'}` }}>
         {isLoading ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 120 }}>
             <span className="mv-meta">Cargando…</span>
@@ -210,26 +232,32 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* + Add button (floating) */}
+      {/* + Add button — centered when no mini player, corner FAB when mini player is showing */}
       <div style={{
-        position: 'absolute', bottom: 28, left: '50%', transform: 'translateX(-50%)',
+        position: 'fixed',
+        bottom: hasMiniPlayer ? 94 : 28,
+        right: hasMiniPlayer ? 18 : undefined,
+        left: hasMiniPlayer ? undefined : '50%',
+        transform: hasMiniPlayer ? undefined : 'translateX(-50%)',
         zIndex: 20,
+        transition: 'bottom 0.25s ease, right 0.25s ease',
       }}>
         <button
           onClick={() => setShowAdd(true)}
           style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            padding: '12px 28px', borderRadius: 'var(--radius-full)',
+            display: 'flex', alignItems: 'center', gap: hasMiniPlayer ? 0 : 8,
+            padding: hasMiniPlayer ? '12px' : '12px 28px',
+            borderRadius: 'var(--radius-full)',
             border: 'none', background: 'var(--text-primary)', color: 'var(--bg-primary)',
             fontFamily: 'var(--font-ui)', fontSize: 'var(--text-sm)', fontWeight: 600,
             cursor: 'pointer', boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
-            transition: `transform var(--dur-hover) var(--ease)`,
+            transition: `transform var(--dur-hover) var(--ease), padding 0.25s ease`,
           }}
           onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.04)'}
           onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
         >
           <Plus size={16} strokeWidth={2.5} />
-          Add
+          {!hasMiniPlayer && 'Add'}
         </button>
       </div>
 

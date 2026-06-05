@@ -315,6 +315,13 @@ def stream_stem(
 ):
     stem = _get_stem_owned(stem_id, user, db)
     file_size = stem.file_size
+    etag = f'"{stem.id}-{stem.file_size}"'
+
+    if request.headers.get("if-none-match") == etag:
+        from fastapi.responses import Response
+        return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "private, max-age=3600"})
+
+    cache_headers = {"Cache-Control": "private, max-age=3600", "ETag": etag}
     range_header = request.headers.get("range")
 
     if range_header:
@@ -340,6 +347,7 @@ def stream_stem(
                 "Content-Range": f"bytes {start}-{end}/{file_size}",
                 "Accept-Ranges": "bytes",
                 "Content-Length": str(length),
+                **cache_headers,
             },
         )
 
@@ -350,5 +358,5 @@ def stream_stem(
 
     return StreamingResponse(
         gen_full(),
-        headers={"Accept-Ranges": "bytes", "Content-Length": str(file_size)},
+        headers={"Accept-Ranges": "bytes", "Content-Length": str(file_size), **cache_headers},
     )

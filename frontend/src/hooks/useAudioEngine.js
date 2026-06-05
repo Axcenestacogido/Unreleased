@@ -4,17 +4,20 @@ import * as Tone from 'tone'
 function extractPeaks(audioBuffer, numBars = 300) {
   const data = audioBuffer.getChannelData(0)
   const step = Math.floor(data.length / numBars)
+  // Sample ~64 points per bar instead of every sample — visually identical, ~64x faster
+  const stride = Math.max(1, Math.floor(step / 64))
   const peaks = []
+  let maxPeak = 0.001
   for (let i = 0; i < numBars; i++) {
     let max = 0
     const end = Math.min((i + 1) * step, data.length)
-    for (let j = i * step; j < end; j++) {
+    for (let j = i * step; j < end; j += stride) {
       const v = Math.abs(data[j])
       if (v > max) max = v
     }
     peaks.push(max)
+    if (max > maxPeak) maxPeak = max
   }
-  const maxPeak = Math.max(...peaks, 0.001)
   return peaks.map((p) => p / maxPeak)
 }
 
@@ -46,7 +49,7 @@ export function useAudioEngine() {
   // Insertion-order LRU — oldest entry evicted when size exceeds CACHE_MAX
   const bufferCacheRef = useRef(new Map())
   const prefetchingRef = useRef(new Set())
-  const CACHE_MAX = 5
+  const CACHE_MAX = 10
   // stemPlayersRef: { [stemId]: Tone.Player }
   const stemPlayersRef = useRef({})
   // Counter of pending manual stops — each _markManualStop() call must be matched by one onstop
@@ -555,25 +558,37 @@ export function useAudioEngine() {
 
   }, [])
 
-  const prefetchTrack = useCallback(async (trackId) => {
+  const prefetchTrack = useCallback((trackId) => {
     if (bufferCacheRef.current.has(trackId)) return
     if (prefetchingRef.current.has(trackId)) return
-    prefetchingRef.current.add(trackId)
-    try {
-      const token = localStorage.getItem('token')
-      const res = await fetch(`/api/tracks/${trackId}/stream`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (!res.ok) return
-      // Re-check — a direct load may have already cached this track
+
+    const doFetch = async () => {
       if (bufferCacheRef.current.has(trackId)) return
-      const arrayBuffer = await res.arrayBuffer()
-      const webAudioBuffer = await Tone.context.rawContext.decodeAudioData(arrayBuffer)
-      const peaks = extractPeaks(webAudioBuffer)
-      _cachePut(trackId, { webAudioBuffer, peaks, duration: webAudioBuffer.duration })
-    } catch {}
-    finally {
-      prefetchingRef.current.delete(trackId)
+      if (prefetchingRef.current.has(trackId)) return
+      prefetchingRef.current.add(trackId)
+      try {
+        const token = localStorage.getItem('token')
+        const res = await fetch(`/api/tracks/${trackId}/stream`, {
+          headers: { Authorization: `Bearer ${token}` },
+          priority: 'low',
+        })
+        if (!res.ok) return
+        if (bufferCacheRef.current.has(trackId)) return
+        const arrayBuffer = await res.arrayBuffer()
+        const webAudioBuffer = await Tone.context.rawContext.decodeAudioData(arrayBuffer)
+        const peaks = extractPeaks(webAudioBuffer)
+        _cachePut(trackId, { webAudioBuffer, peaks, duration: webAudioBuffer.duration })
+      } catch {}
+      finally {
+        prefetchingRef.current.delete(trackId)
+      }
+    }
+
+    // Defer prefetch to idle time so it doesn't compete with an active load
+    if ('requestIdleCallback' in window) {
+      requestIdleCallback(() => doFetch(), { timeout: 5000 })
+    } else {
+      setTimeout(doFetch, 1000)
     }
   }, [])
 

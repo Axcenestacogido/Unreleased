@@ -240,6 +240,18 @@ def _stream_version(track: models.Track, version_number: Optional[int], request:
         raise HTTPException(status_code=404, detail="Audio file missing")
 
     file_size = path.stat().st_size
+    etag = f'"{ver.id}-{ver.file_size}"'
+
+    # Return 304 if the client already has this exact version cached
+    if request.headers.get("if-none-match") == etag:
+        from fastapi.responses import Response
+        return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "private, max-age=3600"})
+
+    cache_headers = {
+        "Cache-Control": "private, max-age=3600",
+        "ETag": etag,
+    }
+
     range_header = request.headers.get("range")
 
     if range_header:
@@ -279,6 +291,7 @@ def _stream_version(track: models.Track, version_number: Optional[int], request:
                 "Content-Range": f"bytes {start}-{end}/{file_size}",
                 "Accept-Ranges": "bytes",
                 "Content-Length": str(length),
+                **cache_headers,
             }
         )
 
@@ -293,6 +306,7 @@ def _stream_version(track: models.Track, version_number: Optional[int], request:
         headers={
             "Accept-Ranges": "bytes",
             "Content-Length": str(file_size),
+            **cache_headers,
         }
     )
 
