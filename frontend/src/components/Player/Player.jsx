@@ -3,7 +3,7 @@ import {
   Play, Pause, SkipBack, SkipForward,
   Repeat, Disc3, Music2, ChevronDown,
   Plus, Trash2, Loader2, Zap, Scissors,
-  FileText, SlidersHorizontal,
+  FileText, SlidersHorizontal, Share2,
 } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { usePlayer } from '../../hooks/usePlayer'
@@ -961,6 +961,33 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
   return inner
 }
 
+// Static skeleton heights so placeholder doesn't flicker on each render
+const MINI_PLACEHOLDER = Array.from({ length: 30 }, (_, i) =>
+  0.25 + 0.35 * Math.abs(Math.sin(i * 0.65))
+)
+
+function MiniWaveform({ peaks, duration, currentTime }) {
+  const N = 30
+  const progress = duration > 0 ? currentTime / duration : 0
+  const bars = peaks.length
+    ? Array.from({ length: N }, (_, i) => peaks[Math.floor(i * peaks.length / N)] ?? 0)
+    : MINI_PLACEHOLDER
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 2, height: 28, width: '100%' }}>
+      {bars.map((h, i) => (
+        <div key={i} style={{
+          flex: 1,
+          height: `${Math.max(14, h * 100)}%`,
+          borderRadius: 2,
+          background: i / N < progress ? 'var(--waveform-active)' : 'var(--waveform-inactive)',
+          transition: 'background 0.1s',
+        }} />
+      ))}
+    </div>
+  )
+}
+
 export default function Player({ isMobile = false }) {
   const { currentTrack, queue, playNext, playPrev, setPlaying } = usePlayer()
   const engine = useAudioEngine()
@@ -1004,42 +1031,69 @@ export default function Player({ isMobile = false }) {
         />
       )
     }
+    const miniCover = currentTrack.project_cover_image
+
     return (
       <div
         onClick={() => setExpanded(true)}
         style={{
           position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 100,
-          height: 64, background: 'var(--bg-elevated)', borderTop: '1px solid var(--border)',
-          display: 'flex', alignItems: 'center', padding: '0 16px', gap: 12,
-          cursor: 'pointer',
+          height: 78, background: 'var(--bg-elevated)', borderTop: '1px solid var(--border)',
+          display: 'flex', alignItems: 'center', padding: '0 14px',
+          gap: 10, cursor: 'pointer',
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
         }}
       >
+        {/* Circular cover art */}
         <div style={{
-          width: 40, height: 40, borderRadius: 'var(--radius-md)',
-          background: 'var(--bg-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          flexShrink: 0,
+          width: 46, height: 46, borderRadius: '50%',
+          background: 'var(--bg-tertiary)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexShrink: 0, overflow: 'hidden',
         }}>
-          <Music2 size={18} strokeWidth={1} style={{ color: 'var(--text-muted)' }} />
+          {miniCover
+            ? <img src={miniCover} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            : <Music2 size={18} strokeWidth={1} style={{ color: 'var(--text-muted)' }} />}
         </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+
+        {/* Track name + project */}
+        <div style={{ width: 90, flexShrink: 0, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {currentTrack.name}
           </div>
-          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 1 }}>
             {currentTrack.project_name || ''}
           </div>
         </div>
-        <IconBtn onClick={(e) => { e.stopPropagation(); playPrev() }}><SkipBack size={18} strokeWidth={1.5} /></IconBtn>
-        <button onClick={(e) => { e.stopPropagation(); togglePlay() }} style={{
-          width: 40, height: 40, borderRadius: '50%', border: 'none',
-          background: 'var(--bg-tertiary)', color: 'var(--text-primary)',
-          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          {engine.playing
-            ? <Pause size={18} strokeWidth={1.5} />
-            : <Play size={18} strokeWidth={1.5} style={{ marginLeft: 2 }} />}
+
+        {/* Mini waveform — fills remaining space */}
+        <div style={{ flex: 1, minWidth: 0, padding: '0 4px' }}>
+          <MiniWaveform peaks={engine.peaks} duration={engine.duration} currentTime={engine.currentTime} />
+        </div>
+
+        {/* Share */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            if (navigator.share) {
+              navigator.share({ title: currentTrack.name, text: currentTrack.project_name || '' }).catch(() => {})
+            }
+          }}
+          style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, flexShrink: 0 }}
+        >
+          <Share2 size={17} strokeWidth={1.5} />
         </button>
-        <IconBtn onClick={(e) => { e.stopPropagation(); playNext() }}><SkipForward size={18} strokeWidth={1.5} /></IconBtn>
+
+        {/* Add */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            window.dispatchEvent(new CustomEvent('mini-player-add'))
+          }}
+          style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, flexShrink: 0 }}
+        >
+          <Plus size={17} strokeWidth={1.5} />
+        </button>
       </div>
     )
   }
