@@ -1,6 +1,7 @@
 import asyncio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from sqlalchemy import text
@@ -56,4 +57,10 @@ app.include_router(events_router)
 # Serve frontend in production
 frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
 if frontend_dist.exists():
+    # Serve the SPA for /s/{token} so React Router can handle it client-side.
+    # Sub-paths like /s/{token}/meta are API routes registered above and take priority.
+    @app.get("/s/{token}", include_in_schema=False)
+    async def share_spa(token: str):
+        return FileResponse(str(frontend_dist / "index.html"))
+
     app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="static")
