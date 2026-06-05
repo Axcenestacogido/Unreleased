@@ -19,6 +19,7 @@ _migrations = [
     "ALTER TABLE tracks ADD COLUMN bpm INTEGER",
     "ALTER TABLE tracks ADD COLUMN key_signature VARCHAR",
     "ALTER TABLE tracks ADD COLUMN lyrics TEXT",
+    "ALTER TABLE tracks ADD COLUMN is_separating BOOLEAN NOT NULL DEFAULT 0",
     "CREATE TABLE IF NOT EXISTS stems (id INTEGER PRIMARY KEY, track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE, name VARCHAR NOT NULL, file_path VARCHAR NOT NULL, file_size INTEGER NOT NULL DEFAULT 0, volume REAL NOT NULL DEFAULT 1.0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
 ]
 with engine.connect() as _conn:

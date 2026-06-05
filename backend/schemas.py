@@ -1,12 +1,12 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional, List
 
 
 # Auth
 class UserCreate(BaseModel):
-    username: str
-    password: str
+    username: str = Field(..., min_length=3, max_length=50)
+    password: str = Field(..., min_length=8)
 
 class UserOut(BaseModel):
     id: int
@@ -25,14 +25,14 @@ class TokenData(BaseModel):
 
 # Projects
 class ProjectCreate(BaseModel):
-    name: str
-    description: Optional[str] = None
+    name: str = Field(..., min_length=1, max_length=100)
+    description: Optional[str] = Field(None, max_length=500)
     color: Optional[str] = None
     cover_image: Optional[str] = None
 
 class ProjectUpdate(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    description: Optional[str] = Field(None, max_length=500)
     color: Optional[str] = None
     cover_image: Optional[str] = None
 
@@ -49,10 +49,10 @@ class ProjectOut(BaseModel):
 
 # Folders
 class FolderCreate(BaseModel):
-    name: str
+    name: str = Field(..., min_length=1, max_length=100)
 
 class FolderUpdate(BaseModel):
-    name: str
+    name: str = Field(..., min_length=1, max_length=100)
 
 class FolderOut(BaseModel):
     id: int
@@ -116,8 +116,8 @@ class StemOut(BaseModel):
         from_attributes = True
 
 class StemUpdate(BaseModel):
-    name: Optional[str] = None
-    volume: Optional[float] = None
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    volume: Optional[float] = Field(None, ge=0.0, le=1.0)
 
 class TrackOut(BaseModel):
     id: int
