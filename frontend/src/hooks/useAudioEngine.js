@@ -40,8 +40,13 @@ export function useAudioEngine() {
   const pitchShiftRef = useRef(null)
   const rafRef = useRef(null)
   const pitchDebounceRef = useRef(null)
-  const loadGenRef = useRef(0)       // incremented each loadTrack call; guards stale loads
-  const loadAbortRef = useRef(null)  // AbortController for the in-flight track fetch
+  const loadGenRef = useRef(0)
+  const loadAbortRef = useRef(null)
+  // Decoded audio cache: Map<trackId, {webAudioBuffer, peaks, duration}>
+  // Insertion-order LRU — oldest entry evicted when size exceeds CACHE_MAX
+  const bufferCacheRef = useRef(new Map())
+  const prefetchingRef = useRef(new Set())
+  const CACHE_MAX = 5
   // stemPlayersRef: { [stemId]: Tone.Player }
   const stemPlayersRef = useRef({})
   // Counter of pending manual stops — each _markManualStop() call must be matched by one onstop
@@ -59,6 +64,13 @@ export function useAudioEngine() {
   const loopARef = useRef(0)
   const loopBRef = useRef(0)
   const loopEnabledRef = useRef(false)
+
+  function _cachePut(trackId, entry) {
+    const c = bufferCacheRef.current
+    c.delete(trackId) // re-insert to mark as recently used
+    c.set(trackId, entry)
+    if (c.size > CACHE_MAX) c.delete(c.keys().next().value)
+  }
 
   function _getLinearTime() {
     return startOffsetRef.current + (Tone.now() - startContextTimeRef.current) * speedRef.current
@@ -185,28 +197,41 @@ export function useAudioEngine() {
 
     try {
       await Tone.start()
-      const token = localStorage.getItem('token')
-      const res = await fetch(`/api/tracks/${trackId}/stream`, {
-        headers: { Authorization: `Bearer ${token}` },
-        signal: controller.signal,
-      })
-      if (!res.ok) throw new Error('Stream failed')
-      const arrayBuffer = await res.arrayBuffer()
 
-      // Bail out if the user already skipped to a different track
-      if (gen !== loadGenRef.current) return
+      let webAudioBuffer
+      const cached = bufferCacheRef.current.get(trackId)
 
-      const webAudioBuffer = await Tone.context.rawContext.decodeAudioData(arrayBuffer)
+      if (cached) {
+        // Cache hit: apply immediately, no network needed
+        webAudioBuffer = cached.webAudioBuffer
+        setDuration(cached.duration)
+        durationRef.current = cached.duration
+        setLoopB(cached.duration)
+        loopBRef.current = cached.duration
+        setPeaks(cached.peaks)
+        if (gen !== loadGenRef.current) return
+      } else {
+        const token = localStorage.getItem('token')
+        const res = await fetch(`/api/tracks/${trackId}/stream`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+        })
+        if (!res.ok) throw new Error('Stream failed')
+        const arrayBuffer = await res.arrayBuffer()
+        if (gen !== loadGenRef.current) return
 
-      // Check again after decode (also async)
-      if (gen !== loadGenRef.current) return
+        webAudioBuffer = await Tone.context.rawContext.decodeAudioData(arrayBuffer)
+        if (gen !== loadGenRef.current) return
 
-      const dur = webAudioBuffer.duration
-      setDuration(dur)
-      durationRef.current = dur
-      setLoopB(dur)
-      loopBRef.current = dur
-      setPeaks(extractPeaks(webAudioBuffer))
+        const dur = webAudioBuffer.duration
+        const peaks = extractPeaks(webAudioBuffer)
+        _cachePut(trackId, { webAudioBuffer, peaks, duration: dur })
+        setDuration(dur)
+        durationRef.current = dur
+        setLoopB(dur)
+        loopBRef.current = dur
+        setPeaks(peaks)
+      }
 
       const toneBuffer = new Tone.ToneAudioBuffer(webAudioBuffer)
       const pitchShift = new Tone.PitchShift(0).toDestination()
@@ -530,6 +555,28 @@ export function useAudioEngine() {
 
   }, [])
 
+  const prefetchTrack = useCallback(async (trackId) => {
+    if (bufferCacheRef.current.has(trackId)) return
+    if (prefetchingRef.current.has(trackId)) return
+    prefetchingRef.current.add(trackId)
+    try {
+      const token = localStorage.getItem('token')
+      const res = await fetch(`/api/tracks/${trackId}/stream`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) return
+      // Re-check — a direct load may have already cached this track
+      if (bufferCacheRef.current.has(trackId)) return
+      const arrayBuffer = await res.arrayBuffer()
+      const webAudioBuffer = await Tone.context.rawContext.decodeAudioData(arrayBuffer)
+      const peaks = extractPeaks(webAudioBuffer)
+      _cachePut(trackId, { webAudioBuffer, peaks, duration: webAudioBuffer.duration })
+    } catch {}
+    finally {
+      prefetchingRef.current.delete(trackId)
+    }
+  }, [])
+
   const setStemVolume = useCallback((stemId, volume) => {
     const player = stemPlayersRef.current[stemId]
     if (player) {
@@ -541,7 +588,7 @@ export function useAudioEngine() {
     isLoading, peaks, duration, playing, currentTime,
     speed, pitch, loopEnabled, loopA, loopB,
     loadedTrackId, loadedTrackIdRef,
-    loadTrack, play, pause, seek,
+    loadTrack, prefetchTrack, play, pause, seek,
     setSpeed, setPitch, setLoopPoints, setLoopEnabled,
     loadStems, setStemVolume,
   }
