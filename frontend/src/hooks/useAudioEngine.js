@@ -34,11 +34,14 @@ export function useAudioEngine() {
   const [loopA, setLoopA] = useState(0)
   const [loopB, setLoopB] = useState(0)
   const [loadedTrackId, setLoadedTrackId] = useState(null)
+  const loadedTrackIdRef = useRef(null)
 
   const playerRef = useRef(null)
   const pitchShiftRef = useRef(null)
   const rafRef = useRef(null)
   const pitchDebounceRef = useRef(null)
+  const loadGenRef = useRef(0)       // incremented each loadTrack call; guards stale loads
+  const loadAbortRef = useRef(null)  // AbortController for the in-flight track fetch
   // stemPlayersRef: { [stemId]: Tone.Player }
   const stemPlayersRef = useRef({})
   // Counter of pending manual stops — each _markManualStop() call must be matched by one onstop
@@ -158,6 +161,12 @@ export function useAudioEngine() {
   }
 
   const loadTrack = useCallback(async (trackId) => {
+    // Cancel any previous in-flight fetch and mark this as the current load
+    loadAbortRef.current?.abort()
+    const controller = new AbortController()
+    loadAbortRef.current = controller
+    const gen = ++loadGenRef.current
+
     _dispose()
     setIsLoading(true)
     setPeaks([])
@@ -179,10 +188,18 @@ export function useAudioEngine() {
       const token = localStorage.getItem('token')
       const res = await fetch(`/api/tracks/${trackId}/stream`, {
         headers: { Authorization: `Bearer ${token}` },
+        signal: controller.signal,
       })
       if (!res.ok) throw new Error('Stream failed')
       const arrayBuffer = await res.arrayBuffer()
+
+      // Bail out if the user already skipped to a different track
+      if (gen !== loadGenRef.current) return
+
       const webAudioBuffer = await Tone.context.rawContext.decodeAudioData(arrayBuffer)
+
+      // Check again after decode (also async)
+      if (gen !== loadGenRef.current) return
 
       const dur = webAudioBuffer.duration
       setDuration(dur)
@@ -233,11 +250,13 @@ export function useAudioEngine() {
       if (stemsShouldMuteRef.current || Object.keys(stemPlayersRef.current).length > 0) {
         player.volume.value = -Infinity
       }
+      loadedTrackIdRef.current = trackId
       setLoadedTrackId(trackId)
     } catch (err) {
+      if (err.name === 'AbortError' || gen !== loadGenRef.current) return
       console.error('Audio load error:', err)
     } finally {
-      setIsLoading(false)
+      if (gen === loadGenRef.current) setIsLoading(false)
     }
   }, [])
 
@@ -521,7 +540,7 @@ export function useAudioEngine() {
   return {
     isLoading, peaks, duration, playing, currentTime,
     speed, pitch, loopEnabled, loopA, loopB,
-    loadedTrackId,
+    loadedTrackId, loadedTrackIdRef,
     loadTrack, play, pause, seek,
     setSpeed, setPitch, setLoopPoints, setLoopEnabled,
     loadStems, setStemVolume,
