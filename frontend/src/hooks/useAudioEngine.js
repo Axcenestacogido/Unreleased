@@ -38,6 +38,7 @@ export function useAudioEngine() {
   const playerRef = useRef(null)
   const pitchShiftRef = useRef(null)
   const rafRef = useRef(null)
+  const pitchDebounceRef = useRef(null)
   // stemPlayersRef: { [stemId]: Tone.Player }
   const stemPlayersRef = useRef({})
   // Counter of pending manual stops — each _markManualStop() call must be matched by one onstop
@@ -306,10 +307,43 @@ export function useAudioEngine() {
   const setPitch = useCallback((semitones) => {
     pitchValueRef.current = semitones
     setPitchState(semitones)
-    if (!pitchShiftRef.current) return
-    // Update pitch directly — avoids the stop+restart click artifact.
-    // The brief granular overlap (~100ms) is less disruptive than cutting out.
-    pitchShiftRef.current.pitch = semitones - 12 * Math.log2(speedRef.current)
+    if (!playerRef.current || !pitchShiftRef.current) return
+
+    if (!playingRef.current) {
+      // Not playing: swap node immediately, no stop/restart needed
+      try { playerRef.current.disconnect() } catch {}
+      try { pitchShiftRef.current.disconnect(); pitchShiftRef.current.dispose() } catch {}
+      const ps = new Tone.PitchShift(semitones - 12 * Math.log2(speedRef.current)).toDestination()
+      ps.wet.value = 1
+      playerRef.current.connect(ps)
+      pitchShiftRef.current = ps
+      return
+    }
+
+    // Playing: debounce so rapid slider drags collapse into one restart.
+    // pitchValueRef always has the latest target value so the timeout
+    // picks it up even if several semitone steps were skipped.
+    clearTimeout(pitchDebounceRef.current)
+    pitchDebounceRef.current = setTimeout(() => {
+      if (!playerRef.current || !pitchShiftRef.current) return
+      const pos = _getDisplayTime()
+      const target = pitchValueRef.current
+      _markManualStop()
+      try { playerRef.current.stop() } catch {}
+      _stopStemPlayers()
+      try { playerRef.current.disconnect() } catch {}
+      try { pitchShiftRef.current.disconnect(); pitchShiftRef.current.dispose() } catch {}
+      const ps = new Tone.PitchShift(target - 12 * Math.log2(speedRef.current)).toDestination()
+      ps.wet.value = 1
+      playerRef.current.connect(ps)
+      pitchShiftRef.current = ps
+      startOffsetRef.current = Math.max(0, Math.min(pos, durationRef.current - 0.05))
+      const now = Tone.now()
+      startContextTimeRef.current = now
+      try { playerRef.current.start(now, startOffsetRef.current) } catch {}
+      _startStemPlayers(now, startOffsetRef.current)
+      _startRaf()
+    }, 150)
   }, [])
 
   const setLoopPoints = useCallback((a, b) => {
