@@ -182,16 +182,17 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
     queryKey: ['stems', currentTrack?.id],
     queryFn: () => api.get(`/tracks/${currentTrack.id}/stems`).then(r => r.data),
     enabled: !!currentTrack,
-    onSuccess: (data) => {
-      if (data.length > 0 && separating) setSeparating(false)
-      // Sync query volumes into local state (don't overwrite in-progress drags)
-      setStemVolumes(prev => {
-        const next = { ...prev }
-        data.forEach(s => { if (next[s.id] === undefined) next[s.id] = s.volume })
-        return next
-      })
-    },
   })
+
+  // onSuccess was removed in TanStack Query v5 — use an effect instead
+  useEffect(() => {
+    if (stems.length > 0 && separating) setSeparating(false)
+    setStemVolumes(prev => {
+      const next = { ...prev }
+      stems.forEach(s => { if (next[s.id] === undefined) next[s.id] = s.volume })
+      return next
+    })
+  }, [stems])
 
   useEffect(() => {
     if (!currentTrack) return
@@ -264,7 +265,10 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
   function handleLoopPointerDown(e) {
     e.preventDefault()
     e.currentTarget.setPointerCapture(e.pointerId)
-    loopPressRef.current = { startMs: Date.now(), startTime: engine.currentTime }
+    const startTime = engine.currentTime
+    loopPressRef.current = { startMs: Date.now(), startTime }
+    // Show A marker immediately so the user sees where A is while holding
+    if (!loopActive) setLoopA(startTime)
   }
 
   function handleLoopPointerUp() {
