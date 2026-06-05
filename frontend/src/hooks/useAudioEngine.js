@@ -40,8 +40,8 @@ export function useAudioEngine() {
   const rafRef = useRef(null)
   // stemPlayersRef: { [stemId]: Tone.Player }
   const stemPlayersRef = useRef({})
-  // Prevents onstop from triggering loop restart on manual stops (seek/pause/dispose)
-  const manualStopRef = useRef(false)
+  // Counter of pending manual stops — each _markManualStop() call must be matched by one onstop
+  const manualStopRef = useRef(0)
   // Set to true when loadStems is called with stems present, even before playerRef exists.
   // Lets loadTrack mute the player immediately if stems were pre-loaded (race condition guard).
   const stemsShouldMuteRef = useRef(false)
@@ -72,9 +72,9 @@ export function useAudioEngine() {
     return t
   }
 
-  // Signal that the upcoming stop() call is manual so onstop ignores it
+  // Increment before each manual stop(); onstop decrements and skips end-of-track logic
   function _markManualStop() {
-    manualStopRef.current = true
+    manualStopRef.current++
   }
 
   function _stopStemPlayers() {
@@ -113,6 +113,26 @@ export function useAudioEngine() {
     cancelAnimationFrame(rafRef.current)
     const tick = () => {
       if (!playingRef.current) return
+
+      // Enforce loop end: restart audio at loopA when linear time reaches loopB
+      if (loopEnabledRef.current && loopBRef.current > loopARef.current) {
+        const linearT = _getLinearTime()
+        if (linearT >= loopBRef.current) {
+          const loopStart = loopARef.current
+          startOffsetRef.current = loopStart
+          _markManualStop()
+          try { playerRef.current?.stop() } catch {}
+          _stopStemPlayers()
+          const now = Tone.now()
+          startContextTimeRef.current = now
+          try { playerRef.current?.start(now, loopStart) } catch {}
+          _startStemPlayers(now, loopStart)
+          setCurrentTime(loopStart)
+          rafRef.current = requestAnimationFrame(tick)
+          return
+        }
+      }
+
       const t = _getDisplayTime()
       const clamped = Math.min(Math.max(t, 0), durationRef.current)
       setCurrentTime(clamped)
@@ -181,8 +201,8 @@ export function useAudioEngine() {
       // it has inconsistent behavior across browsers at loopEnd = buffer.duration.
       player.onstop = () => {
         // Ignore stops triggered by our own seek/pause/dispose calls
-        if (manualStopRef.current) {
-          manualStopRef.current = false
+        if (manualStopRef.current > 0) {
+          manualStopRef.current--
           return
         }
         if (!playingRef.current) return
