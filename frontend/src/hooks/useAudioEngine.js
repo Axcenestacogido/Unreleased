@@ -359,20 +359,36 @@ export function useAudioEngine() {
       blobUrl = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }))
       silentAudio = new Audio(blobUrl)
       silentAudio.loop = true
-      silentAudio.volume = 0.001
+      silentAudio.volume = 0.01
       silentAudio.play().catch(() => {})
       document.removeEventListener('touchstart', startKeepAlive)
       document.removeEventListener('mousedown', startKeepAlive)
     }
 
-    // Resume AudioContext when returning to foreground
-    const handleVisibility = () => {
-      if (!document.hidden && Tone.context.state !== 'running') {
-        Tone.context.resume()
+    // Resume AudioContext + restart player when returning from lock screen / background.
+    // On iOS, the AudioContext is suspended while the screen is off even when the silent
+    // <audio> keeps the AVAudioSession alive. We detect the suspension and restart.
+    const resumeAndRestart = async () => {
+      const wasSuspended = Tone.context.state !== 'running'
+      if (wasSuspended) {
+        try { await Tone.context.resume() } catch {}
+      }
+      if (wasSuspended && playingRef.current && playerRef.current) {
+        const pos = Math.max(0, Math.min(startOffsetRef.current, durationRef.current - 0.05))
+        _markManualStop()
+        try { playerRef.current.stop() } catch {}
+        _stopStemPlayers()
+        const now = Tone.now()
+        startContextTimeRef.current = now
+        startOffsetRef.current = pos
+        try { playerRef.current.start(now, pos) } catch {}
+        _startStemPlayers(now, pos)
+        _startRaf()
       }
     }
-    // Also resume on pageshow (iOS fires this when returning from background)
-    const handlePageShow = () => Tone.context.state !== 'running' && Tone.context.resume()
+    const handleVisibility = () => { if (!document.hidden) resumeAndRestart() }
+    // pageshow fires on iOS when returning from background (including after screen lock)
+    const handlePageShow = () => resumeAndRestart()
 
     document.addEventListener('touchstart', startKeepAlive, { passive: true })
     document.addEventListener('mousedown', startKeepAlive)
