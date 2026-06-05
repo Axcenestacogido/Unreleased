@@ -20,6 +20,7 @@ function fmt(s) {
 
 function Slider({ value, min, max, step, onChange, onReset }) {
   const trackRef = useRef(null)
+  const draggingRef = useRef(false)
   const pct = Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100))
 
   const getVal = useCallback((e) => {
@@ -30,17 +31,21 @@ function Slider({ value, min, max, step, onChange, onReset }) {
 
   const handlePointerDown = useCallback((e) => {
     e.currentTarget.setPointerCapture(e.pointerId)
+    draggingRef.current = true
     onChange(getVal(e))
   }, [getVal, onChange])
 
   const handlePointerMove = useCallback((e) => {
-    if (e.buttons === 0) return
+    if (!draggingRef.current) return
     onChange(getVal(e))
   }, [getVal, onChange])
+
+  const handlePointerUp = useCallback(() => { draggingRef.current = false }, [])
 
   return (
     <div ref={trackRef} onDoubleClick={onReset}
       onPointerDown={handlePointerDown} onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp}
       style={{ position: 'relative', height: 18, cursor: 'ew-resize', display: 'flex', alignItems: 'center', touchAction: 'none' }}>
       <div style={{ position: 'absolute', left: 0, right: 0, height: 2, background: 'var(--waveform-inactive)', borderRadius: 2 }} />
       <div style={{ position: 'absolute', left: 0, width: `${pct}%`, height: 2, background: 'var(--accent)', borderRadius: 2 }} />
@@ -67,6 +72,7 @@ function IconBtn({ onClick, children, active, size = 32, title }) {
 // Vertical fader for the stems mixer view
 function VerticalFader({ value, onChange, onReset }) {
   const trackRef = useRef(null)
+  const draggingRef = useRef(false)
   const pct = (1 - Math.max(0, Math.min(1, value))) * 100 // 0% = top (max), 100% = bottom (min)
 
   const getVal = useCallback((e) => {
@@ -76,17 +82,21 @@ function VerticalFader({ value, onChange, onReset }) {
 
   const handlePointerDown = useCallback((e) => {
     e.currentTarget.setPointerCapture(e.pointerId)
+    draggingRef.current = true
     onChange(getVal(e))
   }, [getVal, onChange])
 
   const handlePointerMove = useCallback((e) => {
-    if (e.buttons === 0) return
+    if (!draggingRef.current) return
     onChange(getVal(e))
   }, [getVal, onChange])
+
+  const handlePointerUp = useCallback(() => { draggingRef.current = false }, [])
 
   return (
     <div ref={trackRef}
       onPointerDown={handlePointerDown} onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp}
       onDoubleClick={onReset}
       style={{ flex: 1, minHeight: 120, position: 'relative', cursor: 'ns-resize', touchAction: 'none' }}
     >
@@ -111,6 +121,7 @@ function VerticalFader({ value, onChange, onReset }) {
 // Slider for the mobile edit view — dark pill style with label + value
 function EditSlider({ label, value, display, min, max, onChange, onReset }) {
   const trackRef = useRef(null)
+  const draggingRef = useRef(false)
 
   const pct = Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100))
 
@@ -121,13 +132,16 @@ function EditSlider({ label, value, display, min, max, onChange, onReset }) {
 
   const handlePointerDown = useCallback((e) => {
     e.currentTarget.setPointerCapture(e.pointerId)
+    draggingRef.current = true
     onChange(getVal(e))
   }, [getVal, onChange])
 
   const handlePointerMove = useCallback((e) => {
-    if (e.buttons === 0) return
+    if (!draggingRef.current) return
     onChange(getVal(e))
   }, [getVal, onChange])
+
+  const handlePointerUp = useCallback(() => { draggingRef.current = false }, [])
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: 'var(--bg-secondary)', borderRadius: 12, padding: '14px 16px' }}>
@@ -135,6 +149,7 @@ function EditSlider({ label, value, display, min, max, onChange, onReset }) {
       <div ref={trackRef}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp}
         onDoubleClick={onReset}
         style={{ flex: 1, position: 'relative', height: 28, cursor: 'ew-resize', display: 'flex', alignItems: 'center', touchAction: 'none' }}
       >
@@ -173,6 +188,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
   const [separating, setSeparating] = useState(false)
   const [stemVolumes, setStemVolumes] = useState({})
   const saveTimeout = useRef(null)
+  const stemSaveTimeouts = useRef({})
   const stemInputRef = useRef(null)
   const wasPlayingRef = useRef(false)
   const loopPressRef = useRef(null)
@@ -340,12 +356,14 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
     e.target.value = ''
   }
 
-  async function handleStemVolumeChange(stem, volume) {
+  function handleStemVolumeChange(stem, volume) {
     setStemVolumes(prev => ({ ...prev, [stem.id]: volume }))
     engine.setStemVolume(stem.id, volume)
-    try {
-      await api.patch(`/stems/${stem.id}`, { volume })
-    } catch {}
+    // Debounce the API write so dragging doesn't flood the server
+    clearTimeout(stemSaveTimeouts.current[stem.id])
+    stemSaveTimeouts.current[stem.id] = setTimeout(() => {
+      api.patch(`/stems/${stem.id}`, { volume }).catch(() => {})
+    }, 500)
   }
 
   async function handleDeleteStem(stemId) {
@@ -751,7 +769,7 @@ function PlayerContent({ engine, currentTrack, playNext, playPrev, onClose, isMo
                   </div>
                   <button onClick={separating ? undefined : handleSeparate} disabled={separating} style={{ background: '#fff', border: 'none', borderRadius: 20, padding: '10px 20px', fontSize: 15, fontWeight: 600, color: '#000', cursor: separating ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                     {separating ? <Loader2 size={14} strokeWidth={2} style={{ animation: 'spin 0.8s linear infinite' }} /> : null}
-                    {separating ? 'Generating…' : 'Generate'}
+                    {separating ? 'Generating…' : stems.length > 0 ? 'Regenerate' : 'Generate'}
                   </button>
                 </div>
                 <input ref={stemInputRef} type="file" accept="audio/*" style={{ display: 'none' }} onChange={handleStemUpload} />

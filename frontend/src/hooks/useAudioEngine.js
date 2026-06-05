@@ -306,34 +306,10 @@ export function useAudioEngine() {
   const setPitch = useCallback((semitones) => {
     pitchValueRef.current = semitones
     setPitchState(semitones)
-    if (!playerRef.current || !pitchShiftRef.current) return
-
-    const wasPlaying = playingRef.current
-    const pos = wasPlaying ? _getDisplayTime() : startOffsetRef.current
-
-    // Stop first to prevent old granular grains mixing with the new pitch
-    if (wasPlaying) {
-      _markManualStop()
-      try { playerRef.current.stop() } catch {}
-      _stopStemPlayers()
-    }
-
-    // Recreate PitchShift: merely updating .pitch leaves old grains playing (doubling)
-    try { playerRef.current.disconnect() } catch {}
-    try { pitchShiftRef.current.disconnect(); pitchShiftRef.current.dispose() } catch {}
-    const pitchShift = new Tone.PitchShift(semitones - 12 * Math.log2(speedRef.current)).toDestination()
-    pitchShift.wet.value = 1
-    playerRef.current.connect(pitchShift)
-    pitchShiftRef.current = pitchShift
-
-    if (wasPlaying) {
-      startOffsetRef.current = Math.max(0, Math.min(pos, durationRef.current - 0.05))
-      const now = Tone.now()
-      startContextTimeRef.current = now
-      try { playerRef.current.start(now, startOffsetRef.current) } catch {}
-      _startStemPlayers(now, startOffsetRef.current)
-      _startRaf()
-    }
+    if (!pitchShiftRef.current) return
+    // Update pitch directly — avoids the stop+restart click artifact.
+    // The brief granular overlap (~100ms) is less disruptive than cutting out.
+    pitchShiftRef.current.pitch = semitones - 12 * Math.log2(speedRef.current)
   }, [])
 
   const setLoopPoints = useCallback((a, b) => {
