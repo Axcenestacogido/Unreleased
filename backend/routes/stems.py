@@ -168,6 +168,13 @@ def _run_demucs(file_path: str, track_id: int, user_id: int) -> None:
             "message": str(e),
         })
     finally:
+        try:
+            track = db.query(models.Track).filter(models.Track.id == track_id).first()
+            if track:
+                track.is_separating = False
+                db.commit()
+        except Exception:
+            pass
         db.close()
 
 
@@ -189,6 +196,12 @@ async def separate_stems(
     ver = max(track.versions, key=lambda v: v.version_number) if track.versions else None
     if not ver:
         raise HTTPException(status_code=400, detail="No audio file")
+
+    if track.is_separating:
+        raise HTTPException(status_code=409, detail="Separation already in progress")
+
+    track.is_separating = True
+    db.commit()
 
     loop = asyncio.get_running_loop()
     loop.run_in_executor(_executor, _run_demucs, ver.file_path, track_id, user.id)

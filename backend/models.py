@@ -53,6 +53,7 @@ class Track(Base):
     bpm = Column(Integer, nullable=True)
     key_signature = Column(String, nullable=True)
     lyrics = Column(Text, nullable=True)
+    is_separating = Column(Boolean, default=False, nullable=False, server_default="0")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
