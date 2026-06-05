@@ -37,7 +37,12 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': 'http://localhost:8000',
-      '/s': 'http://localhost:8000',
+      // Only proxy sub-paths like /s/{token}/meta, /s/{token}/stream, etc.
+      // Do NOT proxy /s/{token} itself — that's the frontend SPA page.
+      '^/s/[^/]+/.+': {
+        target: 'http://localhost:8000',
+        changeOrigin: false,
+      },
     },
   },
 })
