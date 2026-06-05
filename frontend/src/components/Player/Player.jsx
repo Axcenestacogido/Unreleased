@@ -98,7 +98,7 @@ function VerticalFader({ value, onChange, onReset }) {
       onPointerDown={handlePointerDown} onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp}
       onDoubleClick={onReset}
-      style={{ flex: 1, minHeight: 120, position: 'relative', cursor: 'ns-resize', touchAction: 'none' }}
+      style={{ flex: 1, minHeight: 120, width: '100%', position: 'relative', cursor: 'ns-resize', touchAction: 'none' }}
     >
       {/* Tick lines (rallas) */}
       {Array.from({ length: 12 }).map((_, i) => (
@@ -971,7 +971,12 @@ export default function Player({ isMobile = false }) {
   useEffect(() => {
     if (!currentTrack) return
     if (engine.loadedTrackId === currentTrack.id) return
-    engine.loadTrack(currentTrack.id).then(() => engine.play(0))
+    const id = currentTrack.id
+    // loadedTrackIdRef.current always reflects the latest completed load,
+    // so even if this closure is stale we read the correct value
+    engine.loadTrack(id).then(() => {
+      if (engine.loadedTrackIdRef.current === id) engine.play(0)
+    })
   }, [currentTrack?.id])
 
   // Keep PlayerContext in sync so TrackList can show the equalizer only when actually playing
