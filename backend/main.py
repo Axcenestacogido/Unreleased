@@ -55,16 +55,18 @@ app.include_router(events_router)
 
 # Serve frontend in production
 frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
+_share_page = Path(__file__).parent / "share_page.html"
 
 # Always register this route so /s/{token} returns the SPA page.
 # API sub-paths like /s/{token}/meta are registered above and take priority.
 @app.get("/s/{token}", include_in_schema=False)
 async def share_spa(token: str):
+    # Prefer the full compiled React app if available
     index = frontend_dist / "index.html"
     if index.exists():
         return FileResponse(str(index))
-    from fastapi import HTTPException
-    raise HTTPException(status_code=404, detail="Frontend not built")
+    # Fallback: serve the standalone share page (no build required)
+    return FileResponse(str(_share_page), media_type="text/html")
 
 if frontend_dist.exists():
     app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="static")
